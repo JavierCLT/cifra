@@ -1,0 +1,685 @@
+/* public/css/styles.css - Main stylesheet */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #f7f7f7;
+    color: #333;
+    line-height: 1.6;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Bank of America Color Palette */
+:root {
+    --boa-red: #E31837;
+    --boa-dark-red: #B71234;
+    --boa-blue: #0060A9;
+    --boa-dark-blue: #003D6A;
+    --boa-light-blue: #E6F2FA;
+    --boa-gray: #6C757D;
+    --boa-light-gray: #F0F0F0;
+    --boa-white: #FFFFFF;
+    --boa-black: #000000;
+}
+
+/* Sidebar Navigation */
+.sidebar {
+    width: 250px;
+    background-color: var(--boa-dark-blue);
+    color: var(--boa-white);
+    padding: 20px 0;
+    overflow-y: auto;
+    flex-shrink: 0;
+}
+
+.sidebar h2 {
+    padding: 0 20px 20px;
+    font-size: 1.2em;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+    margin-bottom: 10px;
+}
+
+.team-nav {
+    list-style: none;
+}
+
+.team-nav li {
+    margin: 2px 0;
+}
+
+.team-nav a {
+    display: block;
+    padding: 10px 20px;
+    color: var(--boa-white);
+    text-decoration: none;
+    transition: background-color 0.3s;
+}
+
+.team-nav a:hover {
+    background-color: var(--boa-blue);
+}
+
+.team-nav a.active {
+    background-color: var(--boa-red);
+    font-weight: bold;
+}
+
+.team-nav .group-header {
+    background-color: rgba(255,255,255,0.1);
+    padding: 8px 20px;
+    font-weight: bold;
+    color: var(--boa-light-blue);
+    margin-top: 10px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.team-nav .group-header:hover {
+    background-color: rgba(255,255,255,0.2);
+}
+
+.team-nav .group-header.active {
+    background-color: var(--boa-red);
+    color: var(--boa-white);
+}
+
+.team-nav .group-header .arrow {
+    font-size: 12px;
+    transition: transform 0.3s;
+}
+
+.team-nav .group-header.collapsed .arrow {
+    transform: rotate(-90deg);
+}
+
+.team-nav .group-items {
+    margin-left: 20px;
+    max-height: 500px;
+    overflow: hidden;
+    transition: max-height 0.3s ease;
+}
+
+.team-nav .group-items.collapsed {
+    max-height: 0;
+}
+
+/* Group view indicator */
+.group-view-indicator {
+    background-color: #17a2b8;
+    color: white;
+    padding: 5px 15px;
+    border-radius: 4px;
+    font-size: 14px;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+/* Main Content Area */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.header {
+    background-color: var(--boa-white);
+    padding: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-left {
+    flex: 1;
+}
+
+.header h1 {
+    color: var(--boa-dark-blue);
+    font-size: 2em;
+    font-weight: normal;
+}
+
+.current-team {
+    color: var(--boa-gray);
+    font-size: 0.9em;
+    margin-top: 5px;
+}
+
+.header-controls {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.forecast-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.forecast-selector {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.forecast-selector label {
+    font-weight: bold;
+    color: var(--boa-dark-blue);
+}
+
+.forecast-selector select {
+    padding: 8px 15px;
+    border: 2px solid var(--boa-blue);
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: white;
+    cursor: pointer;
+}
+
+.stats-bar {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+    background-color: var(--boa-dark-blue);
+    color: white;
+    padding: 10px 20px;
+    display: flex;
+    gap: 20px;
+    font-size: 14px;
+    box-shadow: -2px -2px 5px rgba(0,0,0,0.2);
+    z-index: 100;
+}
+
+.stats-bar span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* View buttons */
+.view-buttons {
+    display: flex;
+    gap: 5px;
+}
+
+.view-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--boa-blue);
+    background-color: white;
+    color: var(--boa-blue);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.3s;
+}
+
+.view-btn:hover {
+    background-color: var(--boa-blue);
+    color: white;
+}
+
+/* Undo/Redo buttons */
+.undo-redo {
+    display: flex;
+    gap: 5px;
+}
+
+.undo-redo button {
+    padding: 8px 12px;
+    border: 1px solid var(--boa-gray);
+    background-color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.3s;
+}
+
+.undo-redo button:hover:not(:disabled) {
+    background-color: var(--boa-light-blue);
+    border-color: var(--boa-blue);
+}
+
+.undo-redo button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Export button */
+.export-btn {
+    padding: 8px 20px;
+    background-color: var(--boa-blue);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: background-color 0.3s;
+}
+
+.export-btn:hover {
+    background-color: var(--boa-dark-blue);
+}
+
+/* Tabs */
+.tabs {
+    display: flex;
+    background-color: var(--boa-white);
+    padding: 0 20px;
+    gap: 5px;
+}
+
+.tab {
+    padding: 15px 30px;
+    background-color: var(--boa-light-gray);
+    border: 2px solid transparent;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--boa-gray);
+    transition: all 0.3s;
+    position: relative;
+    top: 2px;
+}
+
+.tab:hover {
+    background-color: var(--boa-light-blue);
+    color: var(--boa-dark-blue);
+}
+
+.tab.active {
+    background-color: var(--boa-white);
+    color: var(--boa-dark-blue);
+    border-color: var(--boa-red);
+    border-bottom-color: var(--boa-white);
+    font-weight: bold;
+}
+
+/* Content Area */
+.content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background-color: var(--boa-light-gray);
+}
+
+.tab-content {
+    display: none;
+    background-color: var(--boa-white);
+    padding: 20px;
+    border-radius: 0 8px 8px 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    padding-bottom: 20px;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+/* Data Tables */
+.data-table-wrapper {
+    overflow-x: auto;  /* This enables horizontal scroll */
+    overflow-y: visible;  /* Add this to prevent vertical scroll on wrapper */
+    margin-top: 20px;
+    max-width: 100%;
+    position: relative;
+    padding-bottom: 15px;
+    border: 1px solid #ddd;
+    max-height: calc(103vh - 300px); /* Adjust based on your header/tab heights */
+}
+
+.data-table {
+    width: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 14px;
+}
+
+.data-table th,
+.data-table td {
+    padding: 10px;
+    text-align: right;
+    border-right: 1px solid #ddd;
+    border-bottom: 1px solid #ddd;
+    min-width: 80px;
+    background-color: white;
+    position: relative;
+}
+
+/* Consistent width for all month columns */
+.data-table th:not(:first-child),
+.data-table td:not(:first-child) {
+    width: 90px;
+    min-width: 90px;
+    max-width: 90px;
+    overflow: hidden;
+}
+
+.data-table th {
+    background-color: var(--boa-dark-blue);
+    color: var(--boa-white);
+    font-weight: 600;
+    position: sticky;
+    z-index: 1;
+}
+
+.data-table thead tr:first-child th {
+    top: 0;
+    position: sticky;
+    z-index: 10;
+}
+
+.data-table thead tr:nth-child(2) th {
+    top: 41px;
+    position: sticky;
+    z-index: 10;
+}
+
+td.selected:not(.selectable-input) {
+    background-color: rgba(0, 123, 255, 0.1) !important;
+    outline: 2px solid #007bff;
+}
+
+.selectable-input.selected {
+    background-color: #fff3cd !important;
+    border-color: #ffc107 !important;
+}
+
+/* Make cells with inputs selectable when holding Ctrl/Shift */
+td.actual-col:has(input), 
+td.forecast-col:has(input) {
+    cursor: cell;
+}
+
+/* Show different cursor when hovering over inputs */
+input[type="number"], 
+.selectable-input {
+    cursor: text;
+}
+
+/* When Ctrl or Shift is held, show selection cursor */
+body.selecting input[type="number"], 
+body.selecting .selectable-input {
+    cursor: cell;
+}
+/* Make all data cells selectable */
+td.actual-col, td.forecast-col {
+    cursor: cell;
+    user-select: none;
+}
+
+/* Freeze panes - first column */
+.data-table th:first-child,
+.data-table td:first-child {
+    text-align: left;
+    font-weight: 600;
+    min-width: 90px;
+    width: 90px;
+    box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    border-left: 1px solid #ddd;
+}
+
+/* Make first column sticky */
+.data-table thead tr:first-child th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 11;
+    background-color: var(--boa-dark-blue);
+}
+
+.data-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 10;
+    background-color: var(--boa-light-blue);
+}
+
+.data-table tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
+}
+
+.data-table tbody tr:hover {
+    background-color: var(--boa-light-blue);
+}
+
+/* Input Fields */
+.data-table input {
+    width: 100%;
+    padding: 6px;
+    border: 2px solid var(--boa-blue);
+    border-radius: 4px;
+    text-align: right;
+    font-size: 13px;
+    transition: all 0.3s;
+}
+
+.data-table input:focus {
+    outline: none;
+    border-color: var(--boa-red);
+    background-color: #fff;
+    box-shadow: 0 0 5px rgba(227, 24, 55, 0.3);
+}
+
+.data-table input:disabled {
+    background-color: #f5f5f5;
+    border-color: #ddd;
+    cursor: not-allowed;
+}
+
+.data-table input.selected {
+    background-color: #fff3cd;
+    border-color: #ffc107;
+}
+
+/* Column Types */
+.actual-col {
+    background-color: #f8f8f8;
+}
+
+.forecast-col {
+    background-color: #e6f2fa;
+}
+
+.quarter-col {
+    background-color: #f0f8ff;
+    font-weight: bold;
+    border-left: 2px solid var(--boa-blue);
+}
+
+.year-total-col {
+    background-color: #fff8dc;
+    font-weight: bold;
+    border-left: 2px solid var(--boa-dark-blue);
+}
+
+.calculated-value {
+    font-weight: 600;
+    color: var(--boa-blue);
+}
+
+.total-row {
+    font-weight: bold;
+    background-color: var(--boa-light-blue) !important;
+}
+
+.subtotal-row {
+    font-weight: 600;
+    background-color: #f0f7ff !important;
+}
+
+/* Section Headers */
+.section-header {
+    background-color: var(--boa-gray) !important;
+    color: white;
+    font-weight: bold;
+    text-align: center !important;
+}
+
+/* Mix validation indicator */
+.mix-validation-indicator {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 2px 6px;
+    background-color: #dc3545;
+    color: white;
+    font-size: 11px;
+    border-radius: 3px;
+    font-weight: normal;
+}
+
+/* Percentage change modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+    background-color: white;
+    margin: 15% auto;
+    padding: 30px;
+    border: 1px solid #888;
+    border-radius: 8px;
+    width: 400px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+.modal-header {
+    color: var(--boa-dark-blue);
+    font-size: 1.2em;
+    margin-bottom: 20px;
+}
+
+.modal-body {
+    margin-bottom: 20px;
+}
+
+.modal-body label {
+    display: block;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.modal-body input {
+    width: 100%;
+    padding: 10px;
+    border: 2px solid var(--boa-blue);
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+.modal-body .selection-info {
+    margin-top: 10px;
+    color: var(--boa-gray);
+    font-size: 14px;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.modal-footer button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: background-color 0.3s;
+}
+
+.modal-footer .apply-btn {
+    background-color: var(--boa-blue);
+    color: white;
+}
+
+.modal-footer .apply-btn:hover {
+    background-color: var(--boa-dark-blue);
+}
+
+.modal-footer .cancel-btn {
+    background-color: #ccc;
+    color: #333;
+}
+
+.modal-footer .cancel-btn:hover {
+    background-color: #aaa;
+}
+
+/* Product mix warning */
+.mix-warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 4px;
+    display: none;
+}
+
+/* Loading and Error States */
+.loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--boa-gray);
+}
+
+.error {
+    background-color: #fee;
+    color: var(--boa-red);
+    padding: 15px;
+    border-radius: 4px;
+    margin: 20px 0;
+    border-left: 4px solid var(--boa-red);
+}
+
+/* Save Indicator */
+.save-indicator {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 10px 20px;
+    background-color: var(--boa-blue);
+    color: white;
+    border-radius: 4px;
+    display: none;
+    animation: slideIn 0.3s ease;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+}
+
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .sidebar {
+        width: 200px;
+    }
+    
+    .data-table {
+        font-size: 12px;
+        margin-bottom: 20px;
+    }
+}

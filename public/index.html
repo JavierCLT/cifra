@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investment Account Forecasting - Bank of America</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Sidebar Navigation -->
+    <div class="sidebar">
+        <h2>Teams & Groups</h2>
+        <ul class="team-nav" id="teamNav">
+            <!-- Team navigation will be populated from database -->
+        </ul>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="main-content">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <h1>Investment Account Forecasting</h1>
+                <div class="current-team" id="currentTeamDisplay"></div>
+            </div>
+            <div class="header-controls">
+                <div class="forecast-controls">
+                    <div class="forecast-selector">
+                        <label for="forecastSelect">Forecast Version:</label>
+                        <select id="forecastSelect" onchange="switchForecast()">
+                            <!-- Options will be populated from database -->
+                        </select>
+                    </div>
+                    <div class="view-buttons">
+                        <button class="view-btn" onclick="scrollToView('monthly')">Monthly</button>
+                        <button class="view-btn" onclick="scrollToView('quarterly')">Quarterly</button>
+                        <button class="view-btn" onclick="scrollToView('yearly')">Yearly</button>
+                    </div>
+                </div>
+                <div class="undo-redo">
+                    <button id="undoBtn" onclick="undo()" disabled>↶</button>
+                    <button id="redoBtn" onclick="redo()" disabled>↷</button>
+                </div>
+                <button class="export-btn" onclick="exportToExcel()">Export to Excel</button>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('headcount')">HEADCOUNT</button>
+            <button class="tab" onclick="switchTab('production')">PRODUCTION</button>
+        </div>
+
+        <!-- Content Area -->
+        <div class="content">
+            <div id="headcount-tab" class="tab-content active">
+                <div class="loading">Connecting to database...</div>
+            </div>
+
+            <div id="production-tab" class="tab-content">
+                <div class="loading">Loading production data...</div>
+            </div>
+            
+            <div class="mix-warning" id="mixWarning">
+                Warning: Product mix does not sum to 100%. Please adjust the values.
+            </div>
+        </div>
+    </div>
+
+    <!-- Percentage Change Modal -->
+    <div id="percentageModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Adjust Selected Values</div>
+            <div class="modal-body">
+                <label for="percentageInput" id="modalLabel">Change value:</label>
+                <input type="number" id="percentageInput" placeholder="Enter value">
+                <div class="selection-info" id="selectionInfo"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="cancel-btn" onclick="closeModal()">Cancel</button>
+                <button class="apply-btn" onclick="applyValueChange()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="save-indicator" id="saveIndicator">Changes saved!</div>
+
+    <div class="stats-bar" id="statsBar" style="display: none;">
+    <span>Count: <strong id="statsCount">0</strong></span>
+    <span>Sum: <strong id="statsSum">0</strong></span>
+    <span>Average: <strong id="statsAverage">0</strong></span>
+    </div>
+
+    <!-- External Libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Application Scripts -->
+    <script src="js/api.js"></script>
+    <script src="js/ui-helpers.js"></script>
+    <script src="js/render-tables.js"></script>
+    <script src="js/update-calculations.js"></script>
+    <script src="js/excel-export.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

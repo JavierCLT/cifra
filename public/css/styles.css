@@ -329,6 +329,14 @@ body {
     display: block;
 }
 
+.section-header {
+    font-size: 12px;
+    padding: 4px;
+    background-color: #f4f6f8;
+    border-top: 1px solid #ccc;
+    border-bottom: 1px solid #ccc;
+}
+
 /* Data Tables */
 .data-table-wrapper {
     overflow-x: auto;  /* This enables horizontal scroll */
@@ -379,13 +387,15 @@ body {
 .data-table thead tr:first-child th {
     top: 0;
     position: sticky;
-    z-index: 10;
+    z-index: 20;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .data-table thead tr:nth-child(2) th {
     top: 41px;
     position: sticky;
-    z-index: 10;
+    z-index: 20;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 td.selected:not(.selectable-input) {
@@ -436,17 +446,20 @@ td.actual-col, td.forecast-col {
 .data-table thead tr:first-child th:first-child {
     position: sticky;
     left: 0;
-    z-index: 11;
+    z-index: 21;
     background-color: var(--boa-dark-blue);
 }
 
 .data-table tbody td:first-child {
     position: sticky;
     left: 0;
-    z-index: 10;
+    z-index: 5; 
     background-color: var(--boa-light-blue);
 }
 
+.data-table tbody tr td.section-header:first-child {
+    z-index: 2; /* Higher than regular section headers but lower than blue headers */
+}
 .data-table tbody tr:nth-child(even) {
     background-color: #f9f9f9;
 }
@@ -526,6 +539,8 @@ td.actual-col, td.forecast-col {
     color: white;
     font-weight: bold;
     text-align: center !important;
+    position: relative; 
+    z-index: 1; /* Lower than sticky headers */
 }
 
 /* Mix validation indicator */

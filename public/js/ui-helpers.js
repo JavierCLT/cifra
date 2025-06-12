@@ -441,3 +441,42 @@ function validateProductMix(month) {
         }
     }
 }
+
+function scrollToJan2024() {
+    const wrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+    if (!wrapper) return;
+    
+    const table = wrapper.querySelector('table');
+    if (!table) return;
+    
+    // Find the Jan-24 column
+    const headers = table.querySelectorAll('thead tr:last-child th');
+    let jan24Index = -1;
+    
+    for (let i = 0; i < headers.length; i++) {
+        if (headers[i].textContent.trim() === 'Jan-24') {
+            jan24Index = i;
+            break;
+        }
+    }
+    
+    if (jan24Index > 0) {
+        const targetElement = headers[jan24Index];
+        const firstColumn = headers[0];
+        const firstColumnWidth = firstColumn.offsetWidth;
+        
+        // Calculate scroll position
+        // We want Jan-24 to appear just after the sticky first column
+        const elementLeft = targetElement.offsetLeft;
+        
+        // Scroll so that Jan-24 appears right after the first column
+        // Subtract firstColumnWidth to account for the sticky column
+        // Subtract additional padding to ensure it's fully visible
+        const scrollLeft = Math.max(0, elementLeft - firstColumnWidth - 116);
+        
+        wrapper.scrollLeft = scrollLeft;
+        
+        // Store the position
+        AppState.scrollPositions[AppState.currentTab] = scrollLeft;
+    }
+}

@@ -47,8 +47,12 @@
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('headcount')">HEADCOUNT</button>
-            <button class="tab" onclick="switchTab('production')">PRODUCTION</button>
+            <button class="tab" onclick="switchTab('headcount')">HEADCOUNT</button>
+            <button class="tab active" onclick="switchTab('production')">PRODUCTION</button>
+            <button class="tab" onclick="switchTab('referrals')">REFERRALS</button>
+            <button class="tab" onclick="switchTab('incentive')">INCENTIVE</button>
+            <button class="tab" onclick="switchTab('kmpc')">KMPC</button>
+            <button class="tab" onclick="switchTab('finance')">FINANCE</button>
         </div>
 
         <!-- Content Area -->
@@ -59,6 +63,22 @@
 
             <div id="production-tab" class="tab-content">
                 <div class="loading">Loading production data...</div>
+            </div>
+            
+            <div id="referrals-tab" class="tab-content">
+                <div class="loading">Loading referrals data...</div>
+            </div>
+            
+            <div id="incentive-tab" class="tab-content">
+                <div class="loading">Loading incentive data...</div>
+            </div>
+            
+            <div id="kmpc-tab" class="tab-content">
+                <div class="loading">Loading KMPC data...</div>
+            </div>
+            
+            <div id="finance-tab" class="tab-content">
+                <div class="loading">Loading finance data...</div>
             </div>
             
             <div class="mix-warning" id="mixWarning">

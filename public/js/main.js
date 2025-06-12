@@ -15,7 +15,14 @@ const AppState = {
     selectedInputs: [],
     undoStack: [],
     redoStack: [],
-    scrollPositions: { headcount: 0, production: 0 },
+    scrollPositions: { 
+        headcount: 0, 
+        production: 0,
+        referrals: 0,
+        incentive: 0,
+        kmpc: 0,
+        finance: 0
+    },
     currentUser: 'testuser@test.com' // Use email format
 };
 
@@ -75,6 +82,13 @@ async function initializeApp() {
         // Load initial team data
         await loadTeamData(AppState.currentTeam);
         
+        // Scroll to Jan-24 after initial load
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                scrollToJan2024();
+            });
+        });
+
         hideLoadingIndicator();
         
     } catch (error) {
@@ -597,6 +611,9 @@ async function switchTeam(teamNumber) {
     AppState.currentGroup = null;
     AppState.isGroupView = false;
     
+    // Clear scroll positions to trigger Jan-24 scroll on new team
+    AppState.scrollPositions = { headcount: 0, production: 0 };
+    
     // Update UI active states
     document.querySelectorAll('.team-nav a, .group-header').forEach(el => {
         el.classList.remove('active');
@@ -757,13 +774,41 @@ async function renderCurrentTab() {
         }
     }
     
-    if (AppState.currentTab === 'headcount') {
-        renderHeadcountTab(data);
-    } else {
-        renderProductionTab(data);
-        // Validate product mix after rendering
-        setTimeout(validateAllProductMix, 100);
+    switch(AppState.currentTab) {
+        case 'headcount':
+            renderHeadcountTab(data);
+            break;
+        case 'production':
+            renderProductionTab(data);
+            setTimeout(validateAllProductMix, 100);
+            break;
+        case 'referrals':
+            renderReferralsTab(data);
+            break;
+        case 'incentive':
+            renderIncentiveTab(data);
+            break;
+        case 'kmpc':
+            renderKMPCTab(data);
+            break;
+        case 'finance':
+            renderFinanceTab(data);
+            break;
     }
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            const savedPosition = AppState.scrollPositions[AppState.currentTab];
+            if (savedPosition !== undefined && savedPosition !== 0) {
+                const wrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+                if (wrapper) {
+                    wrapper.scrollLeft = savedPosition;
+                }
+            } else {
+                scrollToJan2024();
+            }
+        });
+    });
 }
 
 // Handle headcount changes

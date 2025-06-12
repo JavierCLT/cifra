@@ -608,7 +608,7 @@ function renderProductionTab(data) {
         const productName = `Product ${product}`;
         
         // Product sub-header
-        html += `<tr><td colspan="52" class="product-subheader">${productName}</td></tr>`;
+        html += `<tr style="height:12px;"><td colspan="52" style="padding:0; background:#f9f9f9;"></td></tr>`;
         
         // Productivity row
         html += `<tr><td>${productName} Productivity</td>`;

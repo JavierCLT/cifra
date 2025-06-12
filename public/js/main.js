@@ -22,6 +22,7 @@ const AppState = {
 // Constants
 const PG_LEVELS = ['PG1', 'PG2', 'PG3', 'PG4', 'PG5', 'PG6', 'PG7'];
 const PRODUCTS = ['Product A', 'Product B', 'Product C', 'Product D'];
+const ADDITIONAL_PRODUCTS = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH'];
 let GROUPS = {}; // Will be populated from API
 
 // Initialize application
@@ -360,7 +361,8 @@ async function getGroupData(groupName) {
         pgLevels: {},
         productivity: {},
         productMix: {},
-        abpa: {}
+        abpa: {},
+        additionalProducts: {}
     };
     
     // Initialize data structures
@@ -371,6 +373,14 @@ async function getGroupData(groupName) {
     PRODUCTS.forEach(product => {
         aggregatedData.productMix[product] = {};
         aggregatedData.abpa[product] = {};
+    });
+    
+    // Initialize additional products
+    ADDITIONAL_PRODUCTS.forEach(product => {
+        aggregatedData.additionalProducts[product] = {
+            productivity: {},
+            abpa: {}
+        };
     });
     
     // Make sure all team data is loaded - using team IDs
@@ -440,7 +450,7 @@ async function getGroupData(groupName) {
             const teamProductivity = parseFloat(teamData.productivity[month] || 0);
             const monthIndex = months.indexOf(month);
             const businessDays = window.BUSINESS_DAYS?.[monthIndex] || 21;
-            const teamAccounts = teamHeadcount * teamProductivity * businessDays;
+            const teamAccounts = (teamHeadcount * teamProductivity * businessDays) / 5; // WEEKLY PRODUCTIVITY
             totalAccounts += teamAccounts;
             
             PRODUCTS.forEach(product => {
@@ -463,6 +473,39 @@ async function getGroupData(groupName) {
             aggregatedData.abpa[product][month] = productAccounts[product] > 0 ? 
                 Math.round(productBalances[product] / productAccounts[product]) : 0;
         });
+        
+        // Aggregate additional products
+        ADDITIONAL_PRODUCTS.forEach(product => {
+            let totalAdditionalAccounts = 0;
+            let totalAdditionalBalance = 0;
+            
+            teamKeys.forEach(teamKey => {
+                const teamData = AppState.teamData[AppState.currentForecast][teamKey];
+                if (!teamData || !teamData.additionalProducts) return;
+                
+                const teamHeadcount = PG_LEVELS.reduce((sum, pg) => {
+                    const value = teamData.pgLevels[pg][month] || 0;
+                    return sum + (typeof value === 'string' ? parseInt(value) : value);
+                }, 0);
+                
+                const productProductivity = parseFloat(teamData.additionalProducts[product]?.productivity?.[month] || 0);
+                const productAbpa = parseFloat(teamData.additionalProducts[product]?.abpa?.[month] || 0);
+                const monthIndex = months.indexOf(month);
+                const businessDays = window.BUSINESS_DAYS?.[monthIndex] || 21;
+                const productAccounts = (teamHeadcount * productProductivity * businessDays) / 5;
+                
+                totalAdditionalAccounts += productAccounts;
+                totalAdditionalBalance += productAccounts * productAbpa;
+            });
+            
+            // Calculate weighted average productivity
+            aggregatedData.additionalProducts[product].productivity[month] = 
+                totalHeadcount > 0 ? (totalAdditionalAccounts / ((totalHeadcount * window.BUSINESS_DAYS?.[months.indexOf(month)] || 21) / 5)).toFixed(2) : '0.00';
+            
+            // Calculate weighted average ABPA
+            aggregatedData.additionalProducts[product].abpa[month] = 
+                totalAdditionalAccounts > 0 ? Math.round(totalAdditionalBalance / totalAdditionalAccounts) : 0;
+        });
     });
     
     return aggregatedData;
@@ -481,8 +524,18 @@ function transformApiData(apiData) {
         },
         abpa: {
             'Product A': {}, 'Product B': {}, 'Product C': {}, 'Product D': {}
-        }
+        },
+        // Add structure for additional products
+        additionalProducts: {}
     };
+    
+    // Initialize additional products
+    ADDITIONAL_PRODUCTS.forEach(product => {
+        transformed.additionalProducts[product] = {
+            productivity: {},
+            abpa: {}
+        };
+    });
     
     // Extract business days for global use
     const businessDaysMap = {};
@@ -518,6 +571,15 @@ function transformApiData(apiData) {
         transformed.abpa['Product B'][period] = Math.round(parseFloat(row.product_b_abpa) || 0);
         transformed.abpa['Product C'][period] = Math.round(parseFloat(row.product_c_abpa) || 0);
         transformed.abpa['Product D'][period] = Math.round(parseFloat(row.product_d_abpa) || 0);
+        
+        // Transform additional products
+        ADDITIONAL_PRODUCTS.forEach(product => {
+            const prodLower = product.toLowerCase();
+            transformed.additionalProducts[product].productivity[period] = 
+                parseFloat(row[`product_${prodLower}_productivity`] || 0).toFixed(2);
+            transformed.additionalProducts[product].abpa[period] = 
+                Math.round(parseFloat(row[`product_${prodLower}_abpa`] || 0));
+        });
     });
     
     return transformed;
@@ -540,13 +602,17 @@ async function switchTeam(teamNumber) {
         el.classList.remove('active');
     });
     
-    document.querySelectorAll('.team-nav a').forEach((link) => {
-    if (link.textContent === team.team_name) {  
-        link.classList.add('active');
+    // Find the correct team and update display
+    const team = AppState.teams.find(t => t.team_id === teamNumber);
+    if (team) {
+        document.querySelectorAll('.team-nav a').forEach((link) => {
+            if (link.textContent === team.team_name) {  
+                link.classList.add('active');
+            }
+        });
+        
+        document.getElementById('currentTeamDisplay').textContent = team.team_name;
     }
-    });
-    
-    document.getElementById('currentTeamDisplay').textContent = team.team_name;s
     
     // Load team data
     await loadTeamData(teamNumber);
@@ -822,6 +888,63 @@ async function handleProductionChange(input) {
     }
 }
 
+// Handle additional product changes
+async function handleAdditionalProductChange(input) {
+    const month = input.dataset.month;
+    const product = input.dataset.product;
+    const metric = input.dataset.metric;
+    const team = input.dataset.team;
+    let value = parseFloat(input.value.replace(/,/g, '')) || 0;
+    
+    const teamKey = `Team ${team}`;
+    
+    // Save for undo
+    let previousValue;
+    if (metric === 'additional-productivity') {
+        previousValue = AppState.teamData[AppState.currentForecast][teamKey]
+            .additionalProducts[product].productivity[month];
+        AppState.teamData[AppState.currentForecast][teamKey]
+            .additionalProducts[product].productivity[month] = value.toFixed(2);
+    } else if (metric === 'additional-abpa') {
+        previousValue = AppState.teamData[AppState.currentForecast][teamKey]
+            .additionalProducts[product].abpa[month];
+        AppState.teamData[AppState.currentForecast][teamKey]
+            .additionalProducts[product].abpa[month] = value;
+    }
+    
+    AppState.undoStack.push({
+        type: 'additionalProductChange',
+        data: { team, month, product, metric, previousValue, newValue: value }
+    });
+    AppState.redoStack = [];
+    updateUndoRedoButtons();
+    
+    // Update calculations
+    updateAdditionalProductCalculations(team, month, product);
+    
+    // Determine database field
+    const fieldName = metric === 'additional-productivity' 
+        ? `product_${product.toLowerCase()}_productivity`
+        : `product_${product.toLowerCase()}_abpa`;
+    
+    // Update database
+    try {
+        await API.forecasts.updateData({
+            teamId: parseInt(team),
+            periodDate: getPeriodDate(month),
+            versionId: AppState.currentVersion.version_id,
+            field: fieldName,
+            value: value,
+            updatedBy: AppState.currentUser
+        });
+        
+        showSaveIndicator();
+    } catch (error) {
+        console.error('Failed to save change:', error);
+        showError('Failed to save change');
+    }
+}
+
 // Undo functionality
 function undo() {
     if (AppState.undoStack.length === 0) return;
@@ -861,6 +984,25 @@ function undo() {
         }
         
         updateProductionCalculations(team, month);
+    } else if (action.type === 'additionalProductChange') {
+        const { team, month, product, metric, previousValue } = action.data;
+        const teamKey = `Team ${team}`;
+        
+        if (metric === 'additional-productivity') {
+            AppState.teamData[AppState.currentForecast][teamKey]
+                .additionalProducts[product].productivity[month] = parseFloat(previousValue).toFixed(2);
+            // Update the input directly
+            const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-productivity"][data-team="${team}"]`);
+            if (input) input.value = parseFloat(previousValue).toFixed(2);
+        } else if (metric === 'additional-abpa') {
+            AppState.teamData[AppState.currentForecast][teamKey]
+                .additionalProducts[product].abpa[month] = parseInt(previousValue);
+            // Update the input directly
+            const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${team}"]`);
+            if (input) input.value = formatNumber(previousValue);
+        }
+        
+        updateAdditionalProductCalculations(team, month, product);
     } else if (action.type === 'percentageChange') {
         action.data.forEach(state => {
             const teamKey = `Team ${state.team}`;
@@ -877,9 +1019,22 @@ function undo() {
                 AppState.teamData[AppState.currentForecast][teamKey].abpa[state.product][state.month] = parseInt(state.previousValue);
                 const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="abpa"][data-team="${state.team}"]`);
                 if (input) input.value = formatNumber(state.previousValue);
+            } else if (state.metric === 'additional-productivity') {
+                AppState.teamData[AppState.currentForecast][teamKey]
+                    .additionalProducts[state.product].productivity[state.month] = parseFloat(state.previousValue).toFixed(2);
+                const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="additional-productivity"][data-team="${state.team}"]`);
+                if (input) input.value = parseFloat(state.previousValue).toFixed(2);
+            } else if (state.metric === 'additional-abpa') {
+                AppState.teamData[AppState.currentForecast][teamKey]
+                    .additionalProducts[state.product].abpa[state.month] = parseInt(state.previousValue);
+                const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="additional-abpa"][data-team="${state.team}"]`);
+                if (input) input.value = formatNumber(state.previousValue);
             }
             
             updateProductionCalculations(state.team, state.month);
+            if (state.metric === 'additional-productivity' || state.metric === 'additional-abpa') {
+                updateAdditionalProductCalculations(state.team, state.month, state.product);
+            }
         });
     }
     
@@ -930,6 +1085,25 @@ function redo() {
         }
         
         updateProductionCalculations(team, month);
+    } else if (action.type === 'additionalProductChange') {
+        const { team, month, product, metric, newValue } = action.data;
+        const teamKey = `Team ${team}`;
+        
+        if (metric === 'additional-productivity') {
+            AppState.teamData[AppState.currentForecast][teamKey]
+                .additionalProducts[product].productivity[month] = parseFloat(newValue).toFixed(2);
+            // Update the input directly
+            const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-productivity"][data-team="${team}"]`);
+            if (input) input.value = parseFloat(newValue).toFixed(2);
+        } else if (metric === 'additional-abpa') {
+            AppState.teamData[AppState.currentForecast][teamKey]
+                .additionalProducts[product].abpa[month] = parseInt(newValue);
+            // Update the input directly
+            const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${team}"]`);
+            if (input) input.value = formatNumber(newValue);
+        }
+        
+        updateAdditionalProductCalculations(team, month, product);
     } else if (action.type === 'percentageChange') {
         action.data.forEach(state => {
             const teamKey = `Team ${state.team}`;
@@ -946,9 +1120,22 @@ function redo() {
                 AppState.teamData[AppState.currentForecast][teamKey].abpa[state.product][state.month] = parseInt(state.newValue);
                 const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="abpa"][data-team="${state.team}"]`);
                 if (input) input.value = formatNumber(state.newValue);
+            } else if (state.metric === 'additional-productivity') {
+                AppState.teamData[AppState.currentForecast][teamKey]
+                    .additionalProducts[state.product].productivity[state.month] = parseFloat(state.newValue).toFixed(2);
+                const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="additional-productivity"][data-team="${state.team}"]`);
+                if (input) input.value = parseFloat(state.newValue).toFixed(2);
+            } else if (state.metric === 'additional-abpa') {
+                AppState.teamData[AppState.currentForecast][teamKey]
+                    .additionalProducts[state.product].abpa[state.month] = parseInt(state.newValue);
+                const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="additional-abpa"][data-team="${state.team}"]`);
+                if (input) input.value = formatNumber(state.newValue);
             }
             
             updateProductionCalculations(state.team, state.month);
+            if (state.metric === 'additional-productivity' || state.metric === 'additional-abpa') {
+                updateAdditionalProductCalculations(state.team, state.month, state.product);
+            }
         });
     }
     
@@ -978,13 +1165,13 @@ function openPercentageModal() {
     const firstInput = AppState.selectedInputs[0];
     const metric = firstInput.dataset.metric;
     
-    if (metric === 'productivity') {
+    if (metric === 'productivity' || metric === 'additional-productivity') {
         label.textContent = 'Change by percentage (%):';
         info.textContent = `${AppState.selectedInputs.length} productivity cells selected`;
     } else if (metric === 'mix') {
         label.textContent = 'Set all values to (%):';
         info.textContent = `${AppState.selectedInputs.length} product mix cells selected`;
-    } else if (metric === 'abpa') {
+    } else if (metric === 'abpa' || metric === 'additional-abpa') {
         label.textContent = 'Set all values to:';
         info.textContent = `${AppState.selectedInputs.length} ABPA cells selected`;
     }
@@ -1055,13 +1242,13 @@ function applyValueChange() {
         const currentValue = parseFloat(rawValue) || 0;
         let newValue;
         
-        if (metric === 'productivity') {
+        if (metric === 'productivity' || metric === 'additional-productivity') {
             // Increase by percentage
             newValue = (currentValue * (1 + inputValue / 100)).toFixed(2);
         } else if (metric === 'mix') {
             // Set to specific value
             newValue = inputValue;
-        } else if (metric === 'abpa') {
+        } else if (metric === 'abpa' || metric === 'additional-abpa') {
             // Set to specific value
             newValue = inputValue;
         }
@@ -1092,9 +1279,9 @@ function applyValueChange() {
             (i.dataset.product === state.product || i.dataset.pg === state.pg)
         );
         if (input) {
-            if (metric === 'abpa') {
+            if (metric === 'abpa' || metric === 'additional-abpa') {
                 input.value = state.newValue.toLocaleString();
-            } else if (metric === 'productivity') {
+            } else if (metric === 'productivity' || metric === 'additional-productivity') {
                 input.value = state.newValue.toFixed(2);
             } else {
                 input.value = state.newValue;

@@ -299,8 +299,8 @@ function renderProductionTab(data) {
     });
     html += '</tr>';
     
-    // Productivity
-    html += '<tr><td>Productivity (accounts/headcount/day)</td>';
+    // Productivity - UPDATED LABEL TO WEEKLY
+    html += '<tr><td>Productivity (accounts/headcount/week)</td>';
     months.forEach(month => {
         const isForecast = data.forecastStatus[month] === 'Forecast';
         // Ensure value always has 2 decimals
@@ -316,6 +316,7 @@ function renderProductionTab(data) {
                        data-metric="productivity"
                        data-team="${AppState.currentTeam}"
                        class="selectable-input"
+                       title="Weekly productivity: accounts per headcount per 5-day work week"
                        onchange="handleProductionChange(this)">
             </td>`;
         } else {
@@ -331,14 +332,15 @@ function renderProductionTab(data) {
     }
     html += '</tr>';
     
-    // Total Accounts Sold
+    // Total Accounts Sold - UPDATED CALCULATION WITH WEEKLY PRODUCTIVITY
     html += '<tr class="subtotal-row"><td>Total Accounts Sold</td>';
     const accountsData = {};
     months.forEach((month, idx) => {
         const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
-        const productivity = parseFloat(data.productivity[month]);
+        const weeklyProductivity = parseFloat(data.productivity[month]);
         const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
-        const totalAccounts = Math.round(headcount * productivity * businessDays);
+        // Updated formula: (headcount * weekly_productivity * business_days) / 5
+        const totalAccounts = Math.round((headcount * weeklyProductivity * businessDays) / 5);
         accountsData[month] = totalAccounts;
         html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" id="total-accounts-${month}">${formatNumber(totalAccounts)}</td>`;
     });
@@ -363,9 +365,10 @@ function renderProductionTab(data) {
         let grandTotal = 0;
         PRODUCTS.forEach(product => {
             const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
-            const productivity = parseFloat(data.productivity[month]);
+            const weeklyProductivity = parseFloat(data.productivity[month]);
             const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
-            const totalAccounts = headcount * productivity * businessDays;
+            // Updated formula with weekly productivity
+            const totalAccounts = (headcount * weeklyProductivity * businessDays) / 5;
             const productMix = data.productMix[product][month];
             const productAccounts = Math.round(totalAccounts * productMix);
             const abpa = data.abpa[product][month];
@@ -594,6 +597,146 @@ function renderProductionTab(data) {
             html += `<td class="year-total-col">$${sumInMillions}M</td>`;
         });
         
+        html += '</tr>';
+    });
+    
+    // ========== ADDITIONAL PRODUCTS SECTION ==========
+    html += '<tr><td colspan="52" class="section-header">Additional Products</td></tr>';
+
+    // Create sub-sections for each additional product
+    ADDITIONAL_PRODUCTS.forEach(product => {
+        const productName = `Product ${product}`;
+        
+        // Product sub-header
+        html += `<tr><td colspan="52" class="product-subheader">${productName}</td></tr>`;
+        
+        // Productivity row
+        html += `<tr><td>${productName} Productivity</td>`;
+        months.forEach(month => {
+            const isForecast = data.forecastStatus[month] === 'Forecast';
+            const value = data.additionalProducts?.[product]?.productivity?.[month] || '0.00';
+            const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+            
+            if (isForecast && !AppState.isGroupView && isCurrentForecast) {
+                html += `<td class="forecast-col">
+                    <input type="number" 
+                           value="${value}" 
+                           step="0.01"
+                           data-month="${month}" 
+                           data-product="${product}"
+                           data-metric="additional-productivity"
+                           data-team="${AppState.currentTeam}"
+                           class="selectable-input"
+                           title="Weekly productivity: accounts per headcount per 5-day work week"
+                           onchange="handleAdditionalProductChange(this)">
+                </td>`;
+            } else {
+                html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${value}</td>`;
+            }
+        });
+        
+        // No quarters/years for productivity (show dash)
+        for (let i = 0; i < totalDashCells; i++) {
+            const isYearCol = i >= QUARTERS.length;
+            html += `<td class="${isYearCol ? 'year-total-col' : 'quarter-col'}">-</td>`;
+        }
+        html += '</tr>';
+        
+        // ABPA row
+        html += `<tr><td>${productName} ABPA</td>`;
+        months.forEach(month => {
+            const isForecast = data.forecastStatus[month] === 'Forecast';
+            const value = data.additionalProducts?.[product]?.abpa?.[month] || 0;
+            const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+            
+            if (isForecast && !AppState.isGroupView && isCurrentForecast) {
+                html += `<td class="forecast-col">
+                    <input type="text" 
+                           value="${formatNumber(value)}" 
+                           data-month="${month}" 
+                           data-product="${product}"
+                           data-metric="additional-abpa"
+                           data-team="${AppState.currentTeam}"
+                           class="selectable-input"
+                           onchange="handleAdditionalProductChange(this)"
+                           onfocus="removeFormatting(this)"
+                           onblur="addFormatting(this)">
+                </td>`;
+            } else {
+                html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${formatNumber(value)}</td>`;
+            }
+        });
+        
+        // No quarters/years for ABPA (show dash)
+        for (let i = 0; i < totalDashCells; i++) {
+            const isYearCol = i >= QUARTERS.length;
+            html += `<td class="${isYearCol ? 'year-total-col' : 'quarter-col'}">-</td>`;
+        }
+        html += '</tr>';
+        
+        // Accounts row (calculated) - UPDATED WITH WEEKLY PRODUCTIVITY
+        html += `<tr><td>${productName} Accounts</td>`;
+        const additionalProductAccountsData = {};
+        months.forEach((month, idx) => {
+            const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
+            const weeklyProductivity = parseFloat(data.additionalProducts?.[product]?.productivity?.[month] || 0);
+            const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
+            // Updated formula: (headcount * weekly_productivity * business_days) / 5
+            const accounts = Math.round((headcount * weeklyProductivity * businessDays) / 5);
+            additionalProductAccountsData[month] = accounts;
+            
+            html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" 
+                         id="additional-accounts-${product}-${month}">${formatNumber(accounts)}</td>`;
+        });
+        
+        // Quarter and year totals for accounts
+        QUARTERS.forEach(quarter => {
+            const sum = calculateQuarterSum(additionalProductAccountsData, quarter);
+            html += `<td class="quarter-col">${formatNumber(sum)}</td>`;
+        });
+        
+        YEARS.forEach(year => {
+            const sum = calculateYearSum(additionalProductAccountsData, months, year);
+            html += `<td class="year-total-col">${formatNumber(sum)}</td>`;
+        });
+        html += '</tr>';
+        
+        // Balances row (calculated)
+        html += `<tr><td>${productName} Balances</td>`;
+        months.forEach(month => {
+            const accounts = additionalProductAccountsData[month] || 0;
+            const abpa = data.additionalProducts?.[product]?.abpa?.[month] || 0;
+            const balance = accounts * abpa;
+            const balanceInMillions = (balance / 1000000).toFixed(1);
+            
+            html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" 
+                         id="additional-balance-${product}-${month}">$${balanceInMillions}M</td>`;
+        });
+        
+        // Quarter and year totals for balances
+        QUARTERS.forEach(quarter => {
+            const quarterMonths = getMonthsInQuarter(quarter);
+            let quarterBalance = 0;
+            quarterMonths.forEach(month => {
+                const accounts = additionalProductAccountsData[month] || 0;
+                const abpa = data.additionalProducts?.[product]?.abpa?.[month] || 0;
+                quarterBalance += accounts * abpa;
+            });
+            const balanceInMillions = (quarterBalance / 1000000).toFixed(1);
+            html += `<td class="quarter-col">$${balanceInMillions}M</td>`;
+        });
+        
+        YEARS.forEach(year => {
+            const yearMonths = months.filter(m => getYearFromMonth(m) === year);
+            let yearBalance = 0;
+            yearMonths.forEach(month => {
+                const accounts = additionalProductAccountsData[month] || 0;
+                const abpa = data.additionalProducts?.[product]?.abpa?.[month] || 0;
+                yearBalance += accounts * abpa;
+            });
+            const balanceInMillions = (yearBalance / 1000000).toFixed(1);
+            html += `<td class="year-total-col">$${balanceInMillions}M</td>`;
+        });
         html += '</tr>';
     });
     

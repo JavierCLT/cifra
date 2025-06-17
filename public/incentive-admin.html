@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incentive Configuration - Admin Panel</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <style>
+        
+        body {
+            background-color: #f7f7f7;
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            overflow-y: auto;      
+            height: auto;          
+            min-height: 100vh;     /* Ensure minimum viewport height */
+        }
+        
+        
+        .admin-header {
+            background-color: var(--boa-dark-blue);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            position: sticky;      
+            top: 0;               
+            z-index: 100;          /* Ensure header stays on top */
+        }
+        
+        .admin-header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        
+        
+        .admin-container {
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 0 20px;
+            padding-bottom: 40px;  
+            
+        }
+        
+        .admin-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .admin-section h2 {
+            color: var(--boa-dark-blue);
+            margin-bottom: 20px;
+            border-bottom: 2px solid var(--boa-blue);
+            padding-bottom: 10px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 150px repeat(6, 1fr);
+            gap: 10px;
+            align-items: center;
+            overflow-x: auto;      
+        }
+        
+        .metrics-grid .header {
+            font-weight: bold;
+            background: var(--boa-dark-blue);
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-size: 12px;
+        }
+        
+        .metrics-grid .team-label {
+            font-weight: bold;
+            padding: 10px;
+            background: var(--boa-light-gray);
+            font-size: 14px;
+        }
+        
+        .metrics-grid input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+        }
+        
+        .ratios-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .ratios-table th,
+        .ratios-table td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        
+        .ratios-table th {
+            background: var(--boa-dark-blue);
+            color: white;
+        }
+        
+        .ratios-table input[type="number"] {
+            width: 80px;
+            padding: 5px;
+            text-align: center;
+            border: 1px solid var(--boa-blue);
+        }
+        
+        .save-btn {
+            background: var(--boa-blue);
+            color: white;
+            padding: 10px 30px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        .save-btn:hover {
+            background: var(--boa-dark-blue);
+        }
+        
+        .tab-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .tab-btn {
+            padding: 10px 20px;
+            background: var(--boa-light-gray);
+            border: 2px solid transparent;
+            cursor: pointer;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+        
+        .tab-btn.active {
+            background: var(--boa-blue);
+            color: white;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        
+        .team-selector {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        
+        .team-selector label {
+            font-weight: bold;
+        }
+        
+        .team-selector select {
+            padding: 8px;
+            border: 1px solid var(--boa-blue);
+            border-radius: 4px;
+        }
+        
+        
+        .note {
+            background-color: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #0066cc;
+        }
+        
+        .success-message {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-header">
+        <h1>Incentive Configuration Admin Panel</h1>
+    </div>
+    
+    <div class="admin-container">
+        <div class="tab-nav">
+            <button class="tab-btn active" onclick="switchAdminTab('compensable')">Compensable Metrics</button>
+            <button class="tab-btn" onclick="switchAdminTab('ratios')">Quality Ratios</button>
+        </div>
+        
+        <div id="successMessage" class="success-message"></div>
+        <div id="errorMessage" class="error-message"></div>
+        
+        <!-- Compensable Metrics Tab -->
+        <div id="compensable-tab" class="tab-content active">
+    <div class="admin-section">
+        <h2>Compensable Metrics Configuration</h2>
+        <p>Check the metrics that each team gets compensated on:</p>
+        
+        <!-- MOVED SAVE BUTTON TO TOP -->
+        <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+            <button class="save-btn" onclick="saveCompensableMetrics()">Save Compensable Metrics</button>
+            <span style="font-size: 14px; color: #666;">Changes are saved per team</span>
+        </div>
+        
+        <div class="metrics-grid" id="metricsGrid">
+            <!-- Headers -->
+            <div class="header">TEAMS</div>
+            <div class="header">INVESTMENT<br>ACCOUNTS</div>
+            <div class="header">INVESTMENT<br>ASSETS</div>
+            <div class="header">BANKING<br>ACCOUNTS</div>
+            <div class="header">BANKING<br>ASSETS</div>
+            <div class="header">WEALTH MGMT<br>ACCOUNTS</div>
+            <div class="header">WEALTH MGMT<br>ASSETS</div>
+            
+            <!-- Team rows will be dynamically generated -->
+        </div>
+        
+        <!-- OPTIONAL: Keep another save button at bottom for convenience -->
+        <button class="save-btn" onclick="saveCompensableMetrics()" style="margin-top: 20px;">Save Compensable Metrics</button>
+        </div>
+        </div>
+        
+        <!-- Quality Ratios Tab -->
+        <div id="ratios-tab" class="tab-content">
+            <div class="admin-section">
+                <h2>Quality Ratios Configuration</h2>
+                <p>Enter quality ratios as percentages (e.g., 80 for 80%):</p>
+                
+                <!-- FIX #5: Simplified selector - removed period and version -->
+                <div class="team-selector">
+                    <label>Select Team: </label>
+                    <select id="teamSelect" onchange="loadTeamRatios()">
+                        <!-- Options will be populated dynamically -->
+                    </select>
+                </div>
+                
+                
+                <div class="note">
+                    <strong>Note:</strong> Quality ratios apply to all periods for the selected team.
+                </div>
+                
+                <table class="ratios-table">
+                    <thead>
+                        <tr>
+                            <th>Ratio Type</th>
+                            <th>Value (%)</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ratiosTableBody">
+                        <!-- Rows will be dynamically generated -->
+                    </tbody>
+                </table>
+                
+                <button class="save-btn" onclick="saveQualityRatios()">Save Quality Ratios</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Initialize the admin panel
+        let teams = [];
+        let currentCompensableMetrics = {};
+        let currentQualityRatios = {};
+        
+        async function initializeAdmin() {
+            try {
+                // Load teams
+                const response = await fetch('/api/teams');
+                const data = await response.json();
+                teams = data.data || data; // Handle both response formats
+                
+                // Populate team selector
+                const teamSelect = document.getElementById('teamSelect');
+                teamSelect.innerHTML = '';
+                teams.forEach(team => {
+                    const option = document.createElement('option');
+                    option.value = team.team_id;
+                    option.textContent = team.team_name;
+                    teamSelect.appendChild(option);
+                });
+                
+                // Load compensable metrics
+                await loadCompensableMetrics();
+                
+                // Load quality ratios for first team
+                if (teams.length > 0) {
+                    await loadTeamRatios();
+                }
+            } catch (error) {
+                showError('Failed to initialize admin panel: ' + error.message);
+            }
+        }
+        
+        function switchAdminTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            if (tab === 'compensable') {
+                document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+                document.getElementById('compensable-tab').classList.add('active');
+            } else {
+                document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+                document.getElementById('ratios-tab').classList.add('active');
+            }
+        }
+        
+        async function loadCompensableMetrics() {
+            try {
+                const response = await fetch('/api/incentives/compensable-metrics');
+                const result = await response.json();
+                
+                if (result.success) {
+                    const metrics = result.data;
+                    const grid = document.getElementById('metricsGrid');
+                    
+                    // Remove existing team rows
+                    const existingRows = grid.querySelectorAll('.team-row');
+                    existingRows.forEach(row => row.remove());
+                    
+                    // Create rows for each team
+                    teams.forEach(team => {
+                        // Team label
+                        const teamDiv = document.createElement('div');
+                        teamDiv.className = 'team-label team-row';
+                        teamDiv.textContent = team.team_name;
+                        grid.appendChild(teamDiv);
+                        
+                        // Checkboxes for each metric
+                        const metricTypes = [
+                            'investment_accounts',
+                            'investment_assets',
+                            'banking_accounts',
+                            'banking_assets',
+                            'wealth_accounts',
+                            'wealth_assets'
+                        ];
+                        
+                        metricTypes.forEach(metric => {
+                            const checkDiv = document.createElement('div');
+                            checkDiv.className = 'team-row';
+                            checkDiv.style.textAlign = 'center';
+                            
+                            const checkbox = document.createElement('input');
+                            checkbox.type = 'checkbox';
+                            checkbox.id = `team_${team.team_id}_${metric}`;
+                            checkbox.dataset.teamId = team.team_id;
+                            checkbox.dataset.metric = metric;
+                            
+                            // Check if this metric is compensable for this team
+                            const metricData = metrics.find(m => 
+                                m.team_id === team.team_id && m.metric_category === metric
+                            );
+                            checkbox.checked = metricData ? metricData.is_compensable : false;
+                            
+                            checkDiv.appendChild(checkbox);
+                            grid.appendChild(checkDiv);
+                        });
+                    });
+                }
+            } catch (error) {
+                showError('Failed to load compensable metrics: ' + error.message);
+            }
+        }
+        
+        // FIX #5: Updated loadTeamRatios to not use period
+        async function loadTeamRatios() {
+            try {
+                const teamId = document.getElementById('teamSelect').value;
+                
+                // FIX #5: Simplified API call without period
+                const response = await fetch(`/api/incentives/quality-ratios/${teamId}`);
+                const result = await response.json();
+                
+                if (result.success || result) { // Handle both response formats
+                    currentQualityRatios = result.data || result;
+                    
+                    const ratioTypes = [
+                        { type: 'investment_accounts', desc: 'Investment Accounts Quality' },
+                        { type: 'investment_assets', desc: 'Investment Assets Quality' },
+                        { type: 'banking_accounts', desc: 'Banking Accounts Quality' },
+                        { type: 'banking_assets', desc: 'Banking Assets Quality' },
+                        { type: 'wealth_accounts', desc: 'Wealth Management Accounts Quality' },
+                        { type: 'wealth_assets', desc: 'Wealth Management Assets Quality' },
+                        { type: 'productive_headcount', desc: 'Productive Headcount Adjustment' },
+                        { type: 'ar_enroll', desc: 'AR Enrollment Rate' },
+                        { type: 'ar_book', desc: 'AR Book Rate' },
+                        { type: 'ar_ramp', desc: 'AR Ramp Rate' }
+                    ];
+                    
+                    const tbody = document.getElementById('ratiosTableBody');
+                    tbody.innerHTML = '';
+                    
+                    ratioTypes.forEach(ratio => {
+                        const row = document.createElement('tr');
+                        // FIX #5: Handle new structure
+                        const ratioKey = ratio.type + '_ratio';
+                        const currentValue = currentQualityRatios[ratioKey] || currentQualityRatios[ratio.type] || 1.0;
+                        row.innerHTML = `
+                            <td>${ratio.desc}</td>
+                            <td>
+                                <input type="number" 
+                                       id="ratio_${ratio.type}" 
+                                       min="0" 
+                                       max="200" 
+                                       step="1" 
+                                       value="${Math.round(currentValue * 100)}">
+                            </td>
+                            <td style="text-align: left; font-size: 12px; color: #666;">
+                                ${getRatioDescription(ratio.type)}
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                }
+            } catch (error) {
+                showError('Failed to load quality ratios: ' + error.message);
+            }
+        }
+        
+        function getRatioDescription(type) {
+            const descriptions = {
+                'investment_accounts': 'Percentage of investment accounts that count toward compensation',
+                'investment_assets': 'Percentage of investment assets that count toward compensation',
+                'banking_accounts': 'Percentage of banking accounts that count toward compensation',
+                'banking_assets': 'Percentage of banking assets that count toward compensation',
+                'wealth_accounts': 'Additional percentage for wealth management overlay',
+                'wealth_assets': 'Additional percentage for wealth management overlay',
+                'productive_headcount': 'Adjustment factor for productive headcount',
+                'ar_enroll': 'Percentage of Product C balance for AR enrollment',
+                'ar_book': 'Multiplier applied to AR enrollment',
+                'ar_ramp': 'Multiplier applied to AR book'
+            };
+            return descriptions[type] || '';
+        }
+        
+        async function saveCompensableMetrics() {
+            const updates = [];
+            
+            document.querySelectorAll('#metricsGrid input[type="checkbox"]').forEach(checkbox => {
+                updates.push({
+                    team_id: parseInt(checkbox.dataset.teamId),
+                    metric: checkbox.dataset.metric,
+                    is_compensable: checkbox.checked
+                });
+            });
+            
+            try {
+                const response = await fetch('/api/incentives/compensable-metrics', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        updates,
+                        updatedBy: 'admin@bankofamerica.com'
+                    })
+                });
+                
+                if (response.ok) {
+                    showSuccess('Compensable metrics saved successfully!');
+                } else {
+                    const error = await response.json();
+                    showError('Error saving metrics: ' + error.error);
+                }
+            } catch (error) {
+                showError('Error saving metrics: ' + error.message);
+            }
+        }
+        
+        // FIX #5: Updated saveQualityRatios to not include period
+        async function saveQualityRatios() {
+            const teamId = document.getElementById('teamSelect').value;
+            
+            const ratios = {
+                team_id: parseInt(teamId),
+                investment_accounts_ratio: parseFloat(document.getElementById('ratio_investment_accounts').value) / 100,
+                investment_assets_ratio: parseFloat(document.getElementById('ratio_investment_assets').value) / 100,
+                banking_accounts_ratio: parseFloat(document.getElementById('ratio_banking_accounts').value) / 100,
+                banking_assets_ratio: parseFloat(document.getElementById('ratio_banking_assets').value) / 100,
+                wealth_overlay_ratio: parseFloat(document.getElementById('ratio_wealth_accounts').value) / 100,
+                wealth_assets_ratio: parseFloat(document.getElementById('ratio_wealth_assets').value) / 100,
+                headcount_ratio: parseFloat(document.getElementById('ratio_productive_headcount').value) / 100,
+                ar_enroll_ratio: parseFloat(document.getElementById('ratio_ar_enroll').value) / 100,
+                ar_book_ratio: parseFloat(document.getElementById('ratio_ar_book').value) / 100,
+                ar_ramp_ratio: parseFloat(document.getElementById('ratio_ar_ramp').value) / 100
+            };
+            
+            try {
+                const response = await fetch('/api/incentives/quality-ratios', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(ratios)
+                });
+                
+                if (response.ok) {
+                    showSuccess('Quality ratios saved successfully!');
+                } else {
+                    const error = await response.json();
+                    showError('Error saving ratios: ' + (error.error || 'Unknown error'));
+                }
+            } catch (error) {
+                showError('Error saving ratios: ' + error.message);
+            }
+        }
+        
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMessage');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', initializeAdmin);
+    </script>
+</body>
+</html>

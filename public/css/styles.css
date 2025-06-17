@@ -436,7 +436,7 @@ td.actual-col, td.forecast-col {
 .data-table td:first-child {
     text-align: left;
     font-weight: 600;
-    min-width: 90px;
+    min-width: 120px;
     width: 90px;
     box-shadow: 2px 0 5px rgba(0,0,0,0.1);
     border-left: 1px solid #ddd;

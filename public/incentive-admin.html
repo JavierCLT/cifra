@@ -547,8 +547,30 @@
             }, 5000);
         }
         
-        // Initialize on load
-        document.addEventListener('DOMContentLoaded', initializeAdmin);
+                // Initialize on load
+                document.addEventListener('DOMContentLoaded', initializeAdmin);
+
+        function equalizeHeaderHeight() {
+        // Grab every header cell in the first row
+        const headers = document.querySelectorAll('.metrics-grid .header');
+        if (!headers.length) return;
+
+        // 1. Find the tallest one
+        let tallest = 0;
+        headers.forEach(h => tallest = Math.max(tallest, h.offsetHeight));
+
+        // 2. Apply that height to every header
+        headers.forEach(h => {
+            h.style.height  = tallest + 'px';
+            h.style.display = 'flex';            // perfect vertical centering
+            h.style.alignItems = 'center';
+            h.style.justifyContent = 'center';
+        });
+        }
+
+        /* Run once when the page first loads */
+        document.addEventListener('DOMContentLoaded', equalizeHeaderHeight);
+
     </script>
 </body>
 </html>

@@ -698,3 +698,55 @@ td.actual-col, td.forecast-col {
         margin-bottom: 20px;
     }
 }
+
+/* Compact layout for quality ratios table */
+.ratios-table {
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+.ratios-table th {
+    background-color: #0066cc;
+    color: white;
+    padding: 8px;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.ratios-table td {
+    padding: 6px 8px !important;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.ratios-table tr:hover {
+    background-color: #f5f8fa;
+}
+
+.ratios-table input[type="number"] {
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-size: 14px;
+}
+
+.ratios-table input[type="number"]:focus {
+    outline: none;
+    border-color: #0066cc;
+    box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.2);
+}
+
+/* Reduce spacing in admin section */
+.admin-section h2 {
+    font-size: 22px;
+    margin-bottom: 15px;
+}
+
+/* Make the layout more compact */
+#ratios-tab .admin-section {
+    padding: 15px 20px;
+}
+
+/* Section headers in table */
+.ratios-table tr[style*="background-color: #f8f9fa"] td {
+    font-size: 13px;
+    padding: 6px 8px !important;
+}

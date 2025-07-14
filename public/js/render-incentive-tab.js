@@ -10,9 +10,42 @@ async function renderIncentiveTab(data) {
     
     // Get team-specific configuration from API
     const teamId = AppState.currentTeam;
-    const compensableMetrics = await IncentiveCalculator.getCompensableMetrics(teamId);
-    // FIX #5: Remove period and version from quality ratios call
-    const qualityRatios = await IncentiveCalculator.getQualityRatios(teamId);
+    const versionId = AppState.currentVersion.version_id;
+    
+    const compensableMetrics = await IncentiveCalculator.getCompensableMetrics(teamId, versionId);
+    
+    // For quality ratios, we need to pass a specific period - use the first forecast month
+    const firstForecastMonth = months.find(month => data.forecastStatus[month] === 'Forecast') || months[0];
+    const qualityRatios = await IncentiveCalculator.getQualityRatios(teamId, firstForecastMonth, versionId);
+    
+    // Add admin panel button to the tab navigation area (only for team view)
+    if (!AppState.isGroupView) {
+        // Find the tabs container and add the button
+        const tabsContainer = document.querySelector('.tabs');
+        if (tabsContainer && !document.getElementById('incentiveAdminBtn')) {
+            const adminButton = document.createElement('button');
+            adminButton.id = 'incentiveAdminBtn';
+            adminButton.className = 'btn btn-primary';
+            adminButton.style.cssText = `
+                background-color: #0066cc;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-size: 14px;
+                cursor: pointer;
+                transition: background-color 0.3s;
+                margin-left: 20px;
+                float: right;
+            `;
+            adminButton.textContent = 'Open Incentive Admin Panel';
+            adminButton.onclick = () => window.open('incentive-admin.html', '_blank');
+            adminButton.onmouseover = () => adminButton.style.backgroundColor = '#0052a3';
+            adminButton.onmouseout = () => adminButton.style.backgroundColor = '#0066cc';
+            
+            tabsContainer.appendChild(adminButton);
+        }
+    }
     
     let html = '<div class="data-table-wrapper"><table class="data-table">';
     
@@ -58,134 +91,192 @@ async function renderIncentiveTab(data) {
     const monthlyMetrics = {};
     months.forEach(month => {
         const productionData = IncentiveCalculator.getProductionData(data, month);
+        const isForecast = data.forecastStatus[month] === 'Forecast';
+        
         monthlyMetrics[month] = IncentiveCalculator.calculateMetrics(
-            teamId, month, productionData, compensableMetrics, qualityRatios
+            teamId, month, productionData, compensableMetrics, qualityRatios, isForecast
         );
     });
     
     // Display Per-Advisor Target Metrics Section
     html += '<tr><td colspan="52" class="section-header">Per-Advisor Monthly Targets</td></tr>';
     
-    // FIX #1: QS Target - Display only (no input field)
+    // QS Target - Display only (no input field)
     html += '<tr class="subtotal-row"><td>QS Target</td>';
     months.forEach(month => {
         const value = Math.round(monthlyMetrics[month].accountsPerAdvisor);
         const isForecast = data.forecastStatus[month] === 'Forecast';
-        // Just display the value directly - NO INPUT FIELD
         html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${value}</td>`;
     });
     
-    // Quarter and year averages
+    // Calculate and display quarter averages for QS Target
     QUARTERS.forEach(quarter => {
-        const quarterData = {};
-        getMonthsInQuarter(quarter).forEach(m => {
-            quarterData[m] = monthlyMetrics[m]?.accountsPerAdvisor || 0;
-        });
-        const avg = Math.round(calculateQuarterAverage(quarterData, quarter));
-        html += `<td class="quarter-col">${avg}</td>`;
+        const quarterMonths = getMonthsInQuarter(quarter);
+        const avg = calculateAverage(quarterMonths.map(m => monthlyMetrics[m]?.accountsPerAdvisor || 0));
+        html += `<td class="quarter-col">${Math.round(avg)}</td>`;
     });
     
+    // Calculate and display year averages for QS Target
     YEARS.forEach(year => {
-        const yearData = {};
-        months.filter(m => getYearFromMonth(m) === year).forEach(m => {
-            yearData[m] = monthlyMetrics[m]?.accountsPerAdvisor || 0;
-        });
-        const avg = Math.round(calculateYearAverage(yearData, months, year));
-        html += `<td class="year-total-col">${avg}</td>`;
+        const yearMonths = months.filter(m => getYearFromMonth(m) === year);
+        const avg = calculateAverage(yearMonths.map(m => monthlyMetrics[m]?.accountsPerAdvisor || 0));
+        html += `<td class="year-total-col">${Math.round(avg)}</td>`;
     });
     html += '</tr>';
     
-    // FIX #1 & #3: BG Target - Display only with 1 decimal
-    html += '<tr class="subtotal-row"><td>BG Target ($M)</td>';
+    // Assets Target
+    html += '<tr class="subtotal-row"><td>Assets Target ($M)</td>';
     months.forEach(month => {
-        // FIX #3: Use .toFixed(1) for 1 decimal place
-        const value = (monthlyMetrics[month].assetsPerAdvisor / 1000000).toFixed(1);
+        const value = monthlyMetrics[month].assetsPerAdvisor;
         const isForecast = data.forecastStatus[month] === 'Forecast';
-        // Just display the value directly - NO INPUT FIELD
-        html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${value}</td>`;
+        const displayValue = value >= 1000000 ? 
+            `$${(value / 1000000).toFixed(1)}M` : 
+            `$${Math.round(value / 1000)}K`;
+        html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${displayValue}</td>`;
     });
     
-    // Quarter and year calculations with 1 decimal
+    // Quarter averages for Assets
     QUARTERS.forEach(quarter => {
-        const quarterData = {};
-        getMonthsInQuarter(quarter).forEach(m => {
-            quarterData[m] = monthlyMetrics[m]?.assetsPerAdvisor || 0;
-        });
-        const avg = (calculateQuarterAverage(quarterData, quarter) / 1000000).toFixed(1);
-        html += `<td class="quarter-col">${avg}</td>`;
+        const quarterMonths = getMonthsInQuarter(quarter);
+        const avg = calculateAverage(quarterMonths.map(m => monthlyMetrics[m]?.assetsPerAdvisor || 0));
+        const displayValue = avg >= 1000000 ? 
+            `$${(avg / 1000000).toFixed(1)}M` : 
+            `$${Math.round(avg / 1000)}K`;
+        html += `<td class="quarter-col">${displayValue}</td>`;
     });
     
+    // Year averages for Assets
     YEARS.forEach(year => {
-        const yearData = {};
-        months.filter(m => getYearFromMonth(m) === year).forEach(m => {
-            yearData[m] = monthlyMetrics[m]?.assetsPerAdvisor || 0;
-        });
-        const avg = (calculateYearAverage(yearData, months, year) / 1000000).toFixed(1);
-        html += `<td class="year-total-col">${avg}</td>`;
+        const yearMonths = months.filter(m => getYearFromMonth(m) === year);
+        const avg = calculateAverage(yearMonths.map(m => monthlyMetrics[m]?.assetsPerAdvisor || 0));
+        const displayValue = avg >= 1000000 ? 
+            `$${(avg / 1000000).toFixed(1)}M` : 
+            `$${Math.round(avg / 1000)}K`;
+        html += `<td class="year-total-col">${displayValue}</td>`;
     });
     html += '</tr>';
+    
+    // Spacing row
+    html += '<tr class="spacing-row"><td colspan="52">&nbsp;</td></tr>';
     
     // AR Metrics Section
-    html += '<tr><td colspan="52" class="section-header">Annuity Revenue (AR) Targets per Advisor</td></tr>';
+    html += '<tr><td colspan="52" class="section-header">AR Metrics (Per Advisor)</td></tr>';
     
-    // FIX #2: AR Enroll - Changed from ($000) to ($M), divide by 1,000,000
+    // AR Enroll
     html += '<tr><td>AR Enroll ($M)</td>';
     months.forEach(month => {
-        const value = (monthlyMetrics[month].arEnrollPerAdvisor / 1000000).toFixed(1);
-        html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'}">${value}</td>`;
+        const value = monthlyMetrics[month].arEnrollPerAdvisor;
+        const isForecast = data.forecastStatus[month] === 'Forecast';
+        const displayValue = (value / 1000000).toFixed(1);
+        html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${displayValue}</td>`;
     });
-    // Quarter and year totals
-    const totalCells = QUARTERS.length + YEARS.length;
-    for (let i = 0; i < totalCells; i++) {
-        html += `<td class="${i < QUARTERS.length ? 'quarter-col' : 'year-total-col'}">-</td>`;
-    }
+    
+    // Quarter averages for AR Enroll
+    QUARTERS.forEach(quarter => {
+        const quarterMonths = getMonthsInQuarter(quarter);
+        const avg = calculateAverage(quarterMonths.map(m => monthlyMetrics[m]?.arEnrollPerAdvisor || 0));
+        const displayValue = (avg / 1000000).toFixed(1);
+        html += `<td class="quarter-col">${displayValue}</td>`;
+    });
+    
+    // Year averages for AR Enroll
+    YEARS.forEach(year => {
+        const yearMonths = months.filter(m => getYearFromMonth(m) === year);
+        const avg = calculateAverage(yearMonths.map(m => monthlyMetrics[m]?.arEnrollPerAdvisor || 0));
+        const displayValue = (avg / 1000000).toFixed(1);
+        html += `<td class="year-total-col">${displayValue}</td>`;
+    });
     html += '</tr>';
     
-    // FIX #2: AR Book - Changed from ($000) to ($M), divide by 1,000,000
+    // AR Book
     html += '<tr><td>AR Book ($M)</td>';
     months.forEach(month => {
-        const value = (monthlyMetrics[month].arBookPerAdvisor / 1000000).toFixed(1);
-        html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'}">${value}</td>`;
+        const value = monthlyMetrics[month].arBookPerAdvisor;
+        const isForecast = data.forecastStatus[month] === 'Forecast';
+        const displayValue = (value / 1000000).toFixed(1);
+        html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${displayValue}</td>`;
     });
-    for (let i = 0; i < totalCells; i++) {
-        html += `<td class="${i < QUARTERS.length ? 'quarter-col' : 'year-total-col'}">-</td>`;
-    }
+    
+    // Quarter averages for AR Book
+    QUARTERS.forEach(quarter => {
+        const quarterMonths = getMonthsInQuarter(quarter);
+        const avg = calculateAverage(quarterMonths.map(m => monthlyMetrics[m]?.arBookPerAdvisor || 0));
+        const displayValue = (avg / 1000000).toFixed(1);
+        html += `<td class="quarter-col">${displayValue}</td>`;
+    });
+    
+    // Year averages for AR Book
+    YEARS.forEach(year => {
+        const yearMonths = months.filter(m => getYearFromMonth(m) === year);
+        const avg = calculateAverage(yearMonths.map(m => monthlyMetrics[m]?.arBookPerAdvisor || 0));
+        const displayValue = (avg / 1000000).toFixed(1);
+        html += `<td class="year-total-col">${displayValue}</td>`;
+    });
     html += '</tr>';
     
-    // FIX #2: AR Ramp - Changed from ($000) to ($M), divide by 1,000,000
+    // AR Ramp
     html += '<tr><td>AR Ramp ($M)</td>';
     months.forEach(month => {
-        const value = (monthlyMetrics[month].arRampPerAdvisor / 1000000).toFixed(1);
-        html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'}">${value}</td>`;
+        const value = monthlyMetrics[month].arBookPerAdvisor;
+        const isForecast = data.forecastStatus[month] === 'Forecast';
+        const displayValue = (value / 1000000).toFixed(1);
+        html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${displayValue}</td>`;
     });
-    for (let i = 0; i < totalCells; i++) {
-        html += `<td class="${i < QUARTERS.length ? 'quarter-col' : 'year-total-col'}">-</td>`;
-    }
+    
+    // Quarter averages for AR Ramp
+    QUARTERS.forEach(quarter => {
+        const quarterMonths = getMonthsInQuarter(quarter);
+        const avg = calculateAverage(quarterMonths.map(m => monthlyMetrics[m]?.arRampPerAdvisor || 0));
+        const displayValue = avg >= 1000 ? `$${Math.round(avg / 1000)}K` : `$${Math.round(avg)}`;
+        html += `<td class="quarter-col">${displayValue}</td>`;
+    });
+    
+    // Year averages for AR Ramp
+    YEARS.forEach(year => {
+        const yearMonths = months.filter(m => getYearFromMonth(m) === year);
+        const avg = calculateAverage(yearMonths.map(m => monthlyMetrics[m]?.arRampPerAdvisor || 0));
+        const displayValue = avg >= 1000 ? `$${Math.round(avg / 1000)}K` : `$${Math.round(avg)}`;
+        html += `<td class="year-total-col">${displayValue}</td>`;
+    });
     html += '</tr>';
     
-    // FIX #2: Total AR - Changed from ($000) to ($M), divide by 1,000,000
-    html += '<tr class="total-row"><td>Total AR ($M)</td>';
+    // AR Total (subtotal row)
+    html += '<tr class="subtotal-row"><td>AR Total ($M)</td>';
     months.forEach(month => {
-        const value = (monthlyMetrics[month].arTotalPerAdvisor / 1000000).toFixed(1);
-        html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'}">${value}</td>`;
+        const value = monthlyMetrics[month].arTotalPerAdvisor;
+        const isForecast = data.forecastStatus[month] === 'Forecast';
+        const displayValue = (value / 1000000).toFixed(1);
+        html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${displayValue}</td>`;
     });
-    for (let i = 0; i < totalCells; i++) {
-        html += `<td class="${i < QUARTERS.length ? 'quarter-col' : 'year-total-col'}">-</td>`;
-    }
+    
+    // Quarter averages for AR Total
+    QUARTERS.forEach(quarter => {
+        const quarterMonths = getMonthsInQuarter(quarter);
+        const avg = calculateAverage(quarterMonths.map(m => monthlyMetrics[m]?.arTotalPerAdvisor || 0));
+        const displayValue = (avg / 1000000).toFixed(1);
+        html += `<td class="quarter-col">${displayValue}</td>`;
+    });
+    
+    // Year averages for AR Total
+    YEARS.forEach(year => {
+        const yearMonths = months.filter(m => getYearFromMonth(m) === year);
+        const avg = calculateAverage(yearMonths.map(m => monthlyMetrics[m]?.arTotalPerAdvisor || 0));
+        const displayValue = (avg / 1000000).toFixed(1);
+        html += `<td class="year-total-col">${displayValue}</td>`;
+    });
     html += '</tr>';
     
     html += '</tbody></table></div>';
     
-    // Add admin panel button
-    html += `<div style="margin-top: 20px; text-align: right;">
-        <button onclick="window.open('/incentive-admin.html', '_blank')" 
-                style="padding: 10px 20px; background-color: var(--boa-blue); color: white; border: none; border-radius: 4px; cursor: pointer;">
-            Configure Incentive Settings
-        </button>
-    </div>`;
-    
     container.innerHTML = html;
 }
 
-// Make function available globally
+// Helper function to calculate average
+function calculateAverage(values) {
+    const validValues = values.filter(v => v !== null && v !== undefined && !isNaN(v));
+    if (validValues.length === 0) return 0;
+    return validValues.reduce((sum, val) => sum + val, 0) / validValues.length;
+}
+
+// Export to make it available globally
 window.renderIncentiveTab = renderIncentiveTab;

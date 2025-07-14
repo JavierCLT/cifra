@@ -43,7 +43,7 @@ function updateProductionCalculations(team, month) {
     const productivity = parseFloat(data.productivity[month]) || 0;
     
     // Calculate total accounts
-    const totalAccounts = Math.round(totalHeadcount * productivity * businessDays);
+    const totalAccounts = Math.round(totalHeadcount * productivity * businessDays/5);
     
     // Update total accounts display
     const totalAccountsCell = document.getElementById(`total-accounts-${month}`);

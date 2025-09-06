@@ -67,7 +67,7 @@ const IncentiveCalculator = {
     // Calculate incentive metrics for a team and month
     calculateMetrics: function(teamId, month, productionData, compensableMetrics, qualityRatios, isForecast) {
     // Get productive headcount quality ratio
-    const headcountRatio = qualityRatios.productive_headcount || 0.9;
+    const headcountRatio = (qualityRatios.productive_headcount ?? 0.9);
     const adjustedHeadcount = productionData.totalHeadcount * headcountRatio;
     
         if (adjustedHeadcount === 0) {
@@ -87,17 +87,17 @@ const IncentiveCalculator = {
         // Only apply compensable metrics adjustments for forecast periods
         if (isForecast) {
             if (compensableMetrics.investment_accounts) {
-                const ratio = qualityRatios.investment_accounts || 1;
+                const ratio = (qualityRatios.investment_accounts ?? 1);
                 totalAdjustedAccounts += productionData.investmentAccounts * ratio;
             }
             
             if (compensableMetrics.banking_accounts) {
-                const ratio = qualityRatios.banking_accounts || 1;
+                const ratio = (qualityRatios.banking_accounts ?? 1);
                 totalAdjustedAccounts += productionData.bankingAccounts * ratio;
             }
             
             if (compensableMetrics.wealth_accounts) {
-                const ratio = qualityRatios.wealth_accounts || 0.05;
+                const ratio = (qualityRatios.wealth_accounts ?? 0.05);
                 const totalAccounts = productionData.investmentAccounts + productionData.bankingAccounts;
                 totalAdjustedAccounts += totalAccounts * ratio;
             }
@@ -114,17 +114,17 @@ const IncentiveCalculator = {
         // Only apply compensable metrics adjustments for forecast periods
         if (isForecast) {
             if (compensableMetrics.investment_assets) {
-                const ratio = qualityRatios.investment_assets || 1;
+                const ratio = (qualityRatios.investment_assets ?? 1);
                 totalAdjustedAssets += productionData.investmentAssets * ratio;
             }
             
             if (compensableMetrics.banking_assets) {
-                const ratio = qualityRatios.banking_assets || 1;
+                const ratio = (qualityRatios.banking_assets ?? 1);
                 totalAdjustedAssets += productionData.bankingAssets * ratio;
             }
             
             if (compensableMetrics.wealth_assets) {
-                const ratio = qualityRatios.wealth_assets || 0.05;
+                const ratio = (qualityRatios.wealth_assets ?? 0.05);
                 const totalAssets = productionData.investmentAssets + productionData.bankingAssets;
                 totalAdjustedAssets += totalAssets * ratio;
             }
@@ -136,9 +136,9 @@ const IncentiveCalculator = {
         const assetsPerAdvisor = totalAdjustedAssets / adjustedHeadcount;
         
         // Calculate AR metrics (same for both forecast and actuals)
-        const arEnrollRatio = qualityRatios.ar_enroll || 0.05;
-        const arBookRatio = qualityRatios.ar_book || 0.05;
-        const arRampRatio = qualityRatios.ar_ramp || 0.05;
+        const arEnrollRatio = (qualityRatios.ar_enroll ?? 0.05);
+        const arBookRatio = (qualityRatios.ar_book ?? 0.05);
+        const arRampRatio = (qualityRatios.ar_ramp ?? 0.05);
         
         const arEnroll = productionData.productCBalance * arEnrollRatio;
         const arBook = arEnroll * arBookRatio;
@@ -159,29 +159,30 @@ const IncentiveCalculator = {
         };
     },
     
-    // Get compensable metrics for a team from API
+    // Get compensable metrics for a team from API (returns per-team flags)
     getCompensableMetrics: async function(teamId, versionId) {
-    try {
-        const response = await fetch(`/api/incentives/compensable-metrics/${teamId}?versionId=${versionId}`);
-        const result = await response.json();
-        
-        if (result.success) {
-            return result.data;
-        } else {
-            console.error('Failed to fetch compensable metrics');
-            // Return default configuration as fallback
-            return {
-                investment_accounts: true,
-                investment_assets: true,
-                banking_accounts: false,
-                banking_assets: false,
-                wealth_accounts: false,
-                wealth_assets: false
-            };
+        try {
+            const response = await fetch(`/api/incentives/compensable-metrics?versionId=${versionId}`);
+            const result = await response.json();
+            if (result && result.success && result.data) {
+                const teamRows = result.data.filter(r => r.team_id === parseInt(teamId));
+                const flags = {
+                    investment_accounts: false,
+                    investment_assets: false,
+                    banking_accounts: false,
+                    banking_assets: false,
+                    wealth_accounts: false,
+                    wealth_assets: false
+                };
+                teamRows.forEach(r => {
+                    if (r.metric_category in flags) flags[r.metric_category] = !!r.is_compensable;
+                });
+                return flags;
+            }
+        } catch (error) {
+            console.error('Error fetching compensable metrics:', error);
         }
-    } catch (error) {
-        console.error('Error fetching compensable metrics:', error);
-        // Return default configuration as fallback
+        // Defaults if not available
         return {
             investment_accounts: true,
             investment_assets: true,
@@ -190,49 +191,46 @@ const IncentiveCalculator = {
             wealth_accounts: false,
             wealth_assets: false
         };
-    }
     },
     
-    // Get quality ratios for a team from API
+    // Get quality ratios for a team/version. Prefer version-wide endpoint; fall back to period-specific.
     getQualityRatios: async function(teamId, period, versionId = 2) {
+        // Helper default ratios
+        const defaults = {
+            investment_accounts: 1.00,
+            investment_assets: 1.00,
+            banking_accounts: 0.90,
+            banking_assets: 0.80,
+            wealth_accounts: 0.05,
+            wealth_assets: 0.05,
+            productive_headcount: 0.90,
+            ar_enroll: 0.05,
+            ar_book: 0.05,
+            ar_ramp: 0.05
+        };
         try {
-            const response = await fetch(`/api/incentives/quality-ratios/${teamId}/${period}?versionId=${versionId}`);
-            const result = await response.json();
-            
-            if (result.success) {
-                return result.data;
-            } else {
-                console.error('Failed to fetch quality ratios');
-                // Return default ratios as fallback
-                return {
-                    investment_accounts: 1.00,
-                    investment_assets: 1.00,
-                    banking_accounts: 0.90,
-                    banking_assets: 0.80,
-                    wealth_accounts: 0.05,
-                    wealth_assets: 0.05,
-                    productive_headcount: 0.90,
-                    ar_enroll: 0.05,
-                    ar_book: 0.05,
-                    ar_ramp: 0.05
-                };
+            // New endpoint: latest ratios for version
+            const r1 = await fetch(`/api/incentives/quality-ratios/${teamId}?versionId=${versionId}`);
+            if (r1.ok) {
+                const j = await r1.json();
+                if (j && j.success && j.data && Object.keys(j.data).length > 0) {
+                    return { ...defaults, ...j.data };
+                }
             }
-        } catch (error) {
-            console.error('Error fetching quality ratios:', error);
-            // Return default ratios as fallback
-            return {
-                investment_accounts: 1.00,
-                investment_assets: 1.00,
-                banking_accounts: 0.90,
-                banking_assets: 0.80,
-                wealth_accounts: 0.05,
-                wealth_assets: 0.05,
-                productive_headcount: 0.90,
-                ar_enroll: 0.05,
-                ar_book: 0.05,
-                ar_ramp: 0.05
-            };
+        } catch (e) {
+            // ignore and try legacy path
         }
+        // Legacy endpoint (period-scoped)
+        try {
+            const r2 = await fetch(`/api/incentives/quality-ratios/${teamId}/${period}?versionId=${versionId}`);
+            if (r2.ok) {
+                const j2 = await r2.json();
+                if (j2 && j2.success && j2.data) return { ...defaults, ...j2.data };
+            }
+        } catch (e) {
+            console.error('Error fetching quality ratios (legacy):', e);
+        }
+        return defaults;
     }
 };
 

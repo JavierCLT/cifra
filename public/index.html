@@ -58,11 +58,35 @@
         <!-- Content Area -->
         <div class="content">
             <div id="headcount-tab" class="tab-content active">
-                <div class="loading">Connecting to database...</div>
+                <!-- Mini-subtabs shown only when HEADCOUNT is active -->
+                <div id="headcount-subtabs" class="subtabs" style="display:none;">
+                    <button id="subtab-sales" class="subtab subtab-sales active" onclick="switchHeadcountSubtab('sales')">Sales</button>
+                    <button id="subtab-non-sales" class="subtab subtab-non-sales" onclick="switchHeadcountSubtab('non-sales')">Non-Sales</button>
+                </div>
+                <!-- Sales headcount view (existing content moved here) -->
+                <div id="sales-headcount-subtab" class="subtab-content active">
+                    <div class="loading">Connecting to database...</div>
+                </div>
+                <!-- Non-Sales headcount view (independent, no cross-tab effects) -->
+                <div id="non-sales-headcount-subtab" class="subtab-content" style="display:none;">
+                    <div class="loading">Loading non-sales headcount...</div>
+                </div>
             </div>
 
             <div id="production-tab" class="tab-content">
-                <div class="loading">Loading production data...</div>
+                <!-- Mini-subtabs for Production -->
+                <div id="production-subtabs" class="subtabs" style="display:none;">
+                    <button id="prod-subtab-investments" class="subtab subtab-sales active" onclick="switchProductionSubtab('investments')">Investments</button>
+                    <button id="prod-subtab-banking" class="subtab subtab-non-sales" onclick="switchProductionSubtab('banking')">Banking</button>
+                </div>
+                <!-- Investments subtab content -->
+                <div id="production-investments-subtab" class="subtab-content active">
+                    <div class="loading">Loading production data...</div>
+                </div>
+                <!-- Banking subtab content -->
+                <div id="production-banking-subtab" class="subtab-content" style="display:none;">
+                    <div class="loading">Loading banking data...</div>
+                </div>
             </div>
             
             <div id="referrals-tab" class="tab-content">

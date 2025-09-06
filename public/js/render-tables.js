@@ -103,9 +103,12 @@ function addFormatting(input) {
     input.value = value.toLocaleString();
 }
 
-// Render headcount tab
-function renderHeadcountTab(data) {
-    const container = document.getElementById('headcount-tab');
+// Render headcount tab (supports Sales and Non-Sales modes)
+function renderHeadcountTab(data, opts = {}) {
+    const containerId = opts.containerId || 'headcount-tab';
+    const mode = opts.mode || 'sales'; // 'sales' | 'non-sales'
+    const container = document.getElementById(containerId);
+    const changeHandler = mode === 'non-sales' ? 'handleNonSalesHeadcountChange' : 'handleHeadcountChange';
     const months = generateMonthList();
     
     let html = '<div class="data-table-wrapper"><table class="data-table">';
@@ -165,7 +168,9 @@ function renderHeadcountTab(data) {
                            data-month="${month}" 
                            data-pg="${pg}"
                            data-team="${AppState.currentTeam}"
-                           onchange="handleHeadcountChange(this)">
+                           data-metric="headcount"
+                           class="selectable-input"
+                           onchange="${changeHandler}(this)">
                 </td>`;
             } else {
                 html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${value}</td>`;
@@ -188,10 +193,12 @@ function renderHeadcountTab(data) {
     });
     
     // Total row
-    html += '<tr class="total-row"><td>Total Productive Headcount</td>';
+    const totalLabel = mode === 'non-sales' ? 'Total Non-Sales Headcount' : 'Total Productive Headcount';
+    const idPrefix = mode === 'non-sales' ? 'ns-' : '';
+    html += `<tr class="total-row"><td>${totalLabel}</td>`;
     months.forEach(month => {
         const total = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
-        html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'}" id="headcount-total-${month}">${total}</td>`;
+        html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'}" id="${idPrefix}headcount-total-${month}">${total}</td>`;
     });
     
     // Quarter total averages
@@ -223,9 +230,12 @@ function renderHeadcountTab(data) {
 }
 
 // Render production tab
-function renderProductionTab(data) {
-    const container = document.getElementById('production-tab');
+function renderProductionTab(data, opts = {}) {
+    const container = document.getElementById(opts.containerId || 'production-tab');
+    const mode = opts.mode || 'all'; // 'investments' | 'banking' | 'all'
     const months = generateMonthList();
+    // Used by several sections (both investments and banking)
+    const totalDashCells = QUARTERS.length + YEARS.length;
     
     let html = '<div class="data-table-wrapper"><table class="data-table">';
     
@@ -299,7 +309,8 @@ function renderProductionTab(data) {
     });
     html += '</tr>';
     
-    // Productivity - UPDATED LABEL TO WEEKLY
+    // Productivity - investments only
+    if (mode === 'investments' || mode === 'all') {
     html += '<tr><td>Productivity (accounts/headcount/week)</td>';
     months.forEach(month => {
         const isForecast = data.forecastStatus[month] === 'Forecast';
@@ -331,15 +342,17 @@ function renderProductionTab(data) {
         html += `<td class="${isYearCol ? 'year-total-col' : 'quarter-col'}">-</td>`;
     }
     html += '</tr>';
+    }
     
-    // Total Accounts Sold - UPDATED CALCULATION WITH WEEKLY PRODUCTIVITY
+    // Total Accounts Sold - investments only
+    let accountsData = {};
+    if (mode === 'investments' || mode === 'all') {
     html += '<tr class="subtotal-row"><td>Total Accounts Sold</td>';
-    const accountsData = {};
+    accountsData = {};
     months.forEach((month, idx) => {
         const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
         const weeklyProductivity = parseFloat(data.productivity[month]);
         const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
-        // Updated formula: (headcount * weekly_productivity * business_days) / 5
         const totalAccounts = Math.round((headcount * weeklyProductivity * businessDays) / 5);
         accountsData[month] = totalAccounts;
         html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" id="total-accounts-${month}">${formatNumber(totalAccounts)}</td>`;
@@ -357,6 +370,7 @@ function renderProductionTab(data) {
         html += `<td class="year-total-col">${formatNumber(sum)}</td>`;
     });
     html += '</tr>';
+    }
     
     // Total Balances in millions
     html += '<tr class="total-row"><td>Total Balances ($M)</td>';
@@ -394,7 +408,8 @@ function renderProductionTab(data) {
     });
     html += '</tr>';
     
-    // Product Mix Section
+    // Product Mix Section - investments only
+    if (mode === 'investments' || mode === 'all') {
     html += '<tr><td colspan="52" class="section-header">Product Mix (%)</td></tr>';
 
     PRODUCTS.forEach((product, productIndex) => {
@@ -466,7 +481,7 @@ function renderProductionTab(data) {
         html += '</tr>';
     });
     
-    // Accounts by Product Section
+    // Accounts by Product Section - investments only
     html += '<tr><td colspan="52" class="section-header">Accounts by Product</td></tr>';
     
     const productAccountsData = {};
@@ -496,7 +511,7 @@ function renderProductionTab(data) {
         html += '</tr>';
     });
     
-    // Average Balance per Account Section
+    // Average Balance per Account Section - investments only
     html += '<tr><td colspan="52" class="section-header">Average Balance per Account ($)</td></tr>';
 
     PRODUCTS.forEach(product => {
@@ -600,7 +615,9 @@ function renderProductionTab(data) {
         html += '</tr>';
     });
     
-    // ========== ADDITIONAL PRODUCTS SECTION ==========
+    }
+    // ========== ADDITIONAL PRODUCTS SECTION (Banking) ==========
+    if (mode === 'banking' || mode === 'all') {
     html += '<tr><td colspan="52" class="section-header">Additional Products</td></tr>';
 
     // Create sub-sections for each additional product
@@ -739,6 +756,7 @@ function renderProductionTab(data) {
         });
         html += '</tr>';
     });
+    }
     
     html += '</tbody></table></div>';
     container.innerHTML = html;
@@ -796,49 +814,34 @@ function setupInputSelection() {
         
         cell.addEventListener('mouseenter', (e) => {
             if (window.currentSelection.isDragging && window.currentSelection.selectionType === 'static') {
-                // In production tab, only allow selection within same row
-                if (AppState.currentTab === 'production' && window.currentSelection.startCell) {
-                    const startRow = window.currentSelection.startCell.closest('tr');
-                    const currentRow = cell.closest('tr');
-                    if (startRow !== currentRow) return;
+                const wrapper = cell.closest('.data-table-wrapper') || document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+                const startEl = window.currentSelection.startCell;
+                const endEl = cell;
+                if (wrapper && startEl && endEl) {
+                    const r1 = startEl.getBoundingClientRect();
+                    const r2 = endEl.getBoundingClientRect();
+                    const minX = Math.min(r1.left, r2.left);
+                    const maxX = Math.max(r1.right, r2.right);
+                    const minY = Math.min(r1.top, r2.top);
+                    const maxY = Math.max(r1.bottom, r2.bottom);
+
+                    const tds = wrapper.querySelectorAll('td.actual-col, td.forecast-col, td.quarter-col, td.year-total-col');
+                    AppState.selectedInputs = [];
+                    tds.forEach(td => {
+                        const rect = td.getBoundingClientRect();
+                        const cx = rect.left + rect.width/2;
+                        const cy = rect.top + rect.height/2;
+                        const inside = cx >= minX && cx <= maxX && cy >= minY && cy <= maxY;
+                        if (inside) {
+                            td.classList.add('selected');
+                            AppState.selectedInputs.push(td);
+                        } else {
+                            td.classList.remove('selected');
+                        }
+                    });
+                    window.currentSelection.lastEnteredCell = cell;
+                    updateSelectionStats();
                 }
-                
-                // Handle deselection when moving backwards
-                if (window.currentSelection.lastEnteredCell && window.currentSelection.lastEnteredCell !== cell) {
-                    // Check if we're moving backwards
-                    const cellIndex = Array.from(staticCells).indexOf(cell);
-                    const lastIndex = Array.from(staticCells).indexOf(window.currentSelection.lastEnteredCell);
-                    const startIndex = Array.from(staticCells).indexOf(window.currentSelection.startCell);
-                    
-                    // If moving backwards towards start, deselect cells
-                    if ((startIndex < lastIndex && cellIndex < lastIndex && cellIndex >= startIndex) ||
-                        (startIndex > lastIndex && cellIndex > lastIndex && cellIndex <= startIndex)) {
-                        // Deselect cells between current and last
-                        AppState.selectedInputs = AppState.selectedInputs.filter(c => {
-                            const cIndex = Array.from(staticCells).indexOf(c);
-                            if (startIndex < lastIndex) {
-                                return cIndex < cellIndex || cIndex > lastIndex;
-                            } else {
-                                return cIndex > cellIndex || cIndex < lastIndex;
-                            }
-                        });
-                        
-                        // Update visual selection
-                        staticCells.forEach(c => {
-                            if (!AppState.selectedInputs.includes(c)) {
-                                c.classList.remove('selected');
-                            }
-                        });
-                    }
-                }
-                
-                if (!AppState.selectedInputs.includes(cell)) {
-                    AppState.selectedInputs.push(cell);
-                    cell.classList.add('selected');
-                }
-                
-                window.currentSelection.lastEnteredCell = cell;
-                updateSelectionStats();
             }
         });
     });
@@ -977,46 +980,35 @@ function setupInputSelection() {
         
         cell.addEventListener('mouseenter', (e) => {
             if (window.currentSelection.isDragging && (window.currentSelection.selectionType === 'mixed' || window.currentSelection.selectionType === 'static')) {
-                // In production tab, only allow selection within same row
-                if (AppState.currentTab === 'production' && window.currentSelection.startCell) {
-                    const startRow = window.currentSelection.startCell.closest('tr');
-                    const currentRow = cell.closest('tr');
-                    if (startRow !== currentRow) return;
+                const wrapper = cell.closest('.data-table-wrapper') || document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+                const startEl = window.currentSelection.startCell;
+                const endEl = cell;
+                if (wrapper && startEl && endEl) {
+                    const r1 = startEl.getBoundingClientRect();
+                    const r2 = endEl.getBoundingClientRect();
+                    const minX = Math.min(r1.left, r2.left);
+                    const maxX = Math.max(r1.right, r2.right);
+                    const minY = Math.min(r1.top, r2.top);
+                    const maxY = Math.max(r1.bottom, r2.bottom);
+
+                    // All potential cells in wrapper
+                    const tds = wrapper.querySelectorAll('td.actual-col, td.forecast-col, td.quarter-col, td.year-total-col');
+                    AppState.selectedInputs = [];
+                    tds.forEach(td => {
+                        const rect = td.getBoundingClientRect();
+                        const cx = rect.left + rect.width/2;
+                        const cy = rect.top + rect.height/2;
+                        const inside = cx >= minX && cx <= maxX && cy >= minY && cy <= maxY;
+                        if (inside) {
+                            td.classList.add('selected');
+                            AppState.selectedInputs.push(td);
+                        } else {
+                            td.classList.remove('selected');
+                        }
+                    });
+                    window.currentSelection.lastEnteredCell = cell;
+                    updateSelectionStats();
                 }
-                
-                // Handle deselection when moving backwards
-                if (window.currentSelection.lastEnteredCell && window.currentSelection.lastEnteredCell !== cell) {
-                    const cellArray = Array.from(inputContainerCells);
-                    const cellIndex = cellArray.indexOf(cell);
-                    const lastIndex = cellArray.indexOf(window.currentSelection.lastEnteredCell);
-                    const startIndex = cellArray.indexOf(window.currentSelection.startCell);
-                    
-                    if ((startIndex < lastIndex && cellIndex < lastIndex && cellIndex >= startIndex) ||
-                        (startIndex > lastIndex && cellIndex > lastIndex && cellIndex <= startIndex)) {
-                        AppState.selectedInputs = AppState.selectedInputs.filter(c => {
-                            const cIndex = cellArray.indexOf(c);
-                            if (startIndex < lastIndex) {
-                                return cIndex < cellIndex || cIndex > lastIndex;
-                            } else {
-                                return cIndex > cellIndex || cIndex < lastIndex;
-                            }
-                        });
-                        
-                        inputContainerCells.forEach(c => {
-                            if (!AppState.selectedInputs.includes(c)) {
-                                c.classList.remove('selected');
-                            }
-                        });
-                    }
-                }
-                
-                if (!AppState.selectedInputs.includes(cell)) {
-                    AppState.selectedInputs.push(cell);
-                    cell.classList.add('selected');
-                }
-                
-                window.currentSelection.lastEnteredCell = cell;
-                updateSelectionStats();
             }
         });
     });

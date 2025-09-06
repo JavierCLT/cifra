@@ -123,7 +123,16 @@ router.put('/data', async (req, res) => {
             'pg5_headcount', 'pg6_headcount', 'pg7_headcount',
             'productivity',
             'product_a_mix', 'product_b_mix', 'product_c_mix', 'product_d_mix',
-            'product_a_abpa', 'product_b_abpa', 'product_c_abpa', 'product_d_abpa'
+            'product_a_abpa', 'product_b_abpa', 'product_c_abpa', 'product_d_abpa',
+            // Additional products (AA..HH)
+            'product_aa_productivity','product_aa_abpa',
+            'product_bb_productivity','product_bb_abpa',
+            'product_cc_productivity','product_cc_abpa',
+            'product_dd_productivity','product_dd_abpa',
+            'product_ee_productivity','product_ee_abpa',
+            'product_ff_productivity','product_ff_abpa',
+            'product_gg_productivity','product_gg_abpa',
+            'product_hh_productivity','product_hh_abpa'
         ];
         
         if (!allowedFields.includes(field)) {
@@ -175,6 +184,106 @@ router.put('/data', async (req, res) => {
     }
 });
 
+// Get current (active) forecast version the app uses by default
+router.get('/current', async (req, res) => {
+    try {
+        const forecastPool = req.app.locals.forecastPool;
+        const [versions] = await forecastPool.query(
+            'SELECT * FROM forecast_versions WHERE is_active = TRUE ORDER BY version_id DESC LIMIT 1'
+        );
+        if (!versions.length) {
+            return res.status(404).json({ error: 'No active forecast versions found' });
+        }
+        res.json({ success: true, data: versions[0] });
+    } catch (error) {
+        logger.error('Error fetching current forecast version:', error);
+        res.status(500).json({ error: 'Failed to fetch current forecast version' });
+    }
+});
+
+// Bulk update forecast data
+router.put('/data/bulk', async (req, res) => {
+    const forecastPool = req.app.locals.forecastPool;
+
+    if (!forecastPool) {
+        logger.error('Forecast pool not found in app.locals');
+        return res.status(500).json({ success: false, error: 'Database connection not available' });
+    }
+
+    const connection = await forecastPool.getConnection();
+
+    try {
+        const { updates, versionId, updatedBy } = req.body || {};
+        if (!Array.isArray(updates) || updates.length === 0 || !versionId) {
+            return res.status(400).json({ success: false, error: 'Invalid bulk payload' });
+        }
+
+        const allowedFields = [
+            'pg1_headcount', 'pg2_headcount', 'pg3_headcount', 'pg4_headcount',
+            'pg5_headcount', 'pg6_headcount', 'pg7_headcount',
+            'productivity',
+            'product_a_mix', 'product_b_mix', 'product_c_mix', 'product_d_mix',
+            'product_a_abpa', 'product_b_abpa', 'product_c_abpa', 'product_d_abpa',
+            // Additional products (AA..HH)
+            'product_aa_productivity','product_aa_abpa',
+            'product_bb_productivity','product_bb_abpa',
+            'product_cc_productivity','product_cc_abpa',
+            'product_dd_productivity','product_dd_abpa',
+            'product_ee_productivity','product_ee_abpa',
+            'product_ff_productivity','product_ff_abpa',
+            'product_gg_productivity','product_gg_abpa',
+            'product_hh_productivity','product_hh_abpa'
+        ];
+
+        await connection.beginTransaction();
+
+        for (const u of updates) {
+            const { teamId, periodDate, field, newValue } = u;
+            if (!teamId || !periodDate || !field) continue;
+
+            if (!allowedFields.includes(field)) {
+                // Silently skip unsupported fields instead of failing the whole batch
+                logger.warn(`Skipping unsupported field in bulk update: ${field}`);
+                continue;
+            }
+
+            // Check if record exists
+            const [existing] = await connection.execute(
+                `SELECT forecast_id FROM forecast_data 
+                 WHERE team_id = ? AND period_date = ? AND version_id = ?`,
+                [teamId, periodDate, versionId]
+            );
+
+            if (existing.length === 0) {
+                // Insert new record with this field
+                await connection.execute(
+                    `INSERT INTO forecast_data (
+                        team_id, period_date, version_id, ${field}, updated_by
+                    ) VALUES (?, ?, ?, ?, ?)`,
+                    [teamId, periodDate, versionId, newValue, updatedBy || 'system']
+                );
+            } else {
+                // Update existing
+                await connection.execute(
+                    `UPDATE forecast_data 
+                     SET ${field} = ?, updated_at = NOW(), updated_by = ?
+                     WHERE team_id = ? AND period_date = ? AND version_id = ?`,
+                    [newValue, updatedBy || 'system', teamId, periodDate, versionId]
+                );
+            }
+        }
+
+        await connection.commit();
+        res.json({ success: true, count: updates.length });
+    } catch (error) {
+        await connection.rollback();
+        logger.error('Error in bulk forecast update:', error);
+        res.status(500).json({ success: false, error: 'Failed to process bulk update', details: error.message });
+    } finally {
+        connection.release();
+    }
+});
+
 // Initialize forecast from actuals or another version
 router.post('/initialize', validate('initializeForecast'), async (req, res) => {
     const actualsPool = req.app.locals.actualsPool;
@@ -213,8 +322,16 @@ router.post('/initialize', validate('initializeForecast'), async (req, res) => {
                         productivity,
                         product_a_mix, product_b_mix, product_c_mix, product_d_mix,
                         product_a_abpa, product_b_abpa, product_c_abpa, product_d_abpa,
+                        product_aa_productivity, product_aa_abpa,
+                        product_bb_productivity, product_bb_abpa,
+                        product_cc_productivity, product_cc_abpa,
+                        product_dd_productivity, product_dd_abpa,
+                        product_ee_productivity, product_ee_abpa,
+                        product_ff_productivity, product_ff_abpa,
+                        product_gg_productivity, product_gg_abpa,
+                        product_hh_productivity, product_hh_abpa,
                         updated_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         row.team_id, row.period_date, newVersionId,
                         row.pg1_headcount, row.pg2_headcount, row.pg3_headcount,
@@ -224,6 +341,14 @@ router.post('/initialize', validate('initializeForecast'), async (req, res) => {
                         row.product_c_mix, row.product_d_mix,
                         row.product_a_abpa, row.product_b_abpa,
                         row.product_c_abpa, row.product_d_abpa,
+                        row.product_aa_productivity, row.product_aa_abpa,
+                        row.product_bb_productivity, row.product_bb_abpa,
+                        row.product_cc_productivity, row.product_cc_abpa,
+                        row.product_dd_productivity, row.product_dd_abpa,
+                        row.product_ee_productivity, row.product_ee_abpa,
+                        row.product_ff_productivity, row.product_ff_abpa,
+                        row.product_gg_productivity, row.product_gg_abpa,
+                        row.product_hh_productivity, row.product_hh_abpa,
                         createdBy
                     ]
                 );
@@ -248,8 +373,16 @@ router.post('/initialize', validate('initializeForecast'), async (req, res) => {
                         productivity,
                         product_a_mix, product_b_mix, product_c_mix, product_d_mix,
                         product_a_abpa, product_b_abpa, product_c_abpa, product_d_abpa,
+                        product_aa_productivity, product_aa_abpa,
+                        product_bb_productivity, product_bb_abpa,
+                        product_cc_productivity, product_cc_abpa,
+                        product_dd_productivity, product_dd_abpa,
+                        product_ee_productivity, product_ee_abpa,
+                        product_ff_productivity, product_ff_abpa,
+                        product_gg_productivity, product_gg_abpa,
+                        product_hh_productivity, product_hh_abpa,
                         updated_by
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
                     [
                         row.team_id, row.period_date, newVersionId,
                         row.pg1_headcount, row.pg2_headcount, row.pg3_headcount,
@@ -259,6 +392,14 @@ router.post('/initialize', validate('initializeForecast'), async (req, res) => {
                         row.product_c_mix, row.product_d_mix,
                         row.product_a_abpa, row.product_b_abpa,
                         row.product_c_abpa, row.product_d_abpa,
+                        row.product_aa_productivity, row.product_aa_abpa,
+                        row.product_bb_productivity, row.product_bb_abpa,
+                        row.product_cc_productivity, row.product_cc_abpa,
+                        row.product_dd_productivity, row.product_dd_abpa,
+                        row.product_ee_productivity, row.product_ee_abpa,
+                        row.product_ff_productivity, row.product_ff_abpa,
+                        row.product_gg_productivity, row.product_gg_abpa,
+                        row.product_hh_productivity, row.product_hh_abpa,
                         createdBy
                     ]
                 );

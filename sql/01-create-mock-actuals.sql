@@ -229,6 +229,26 @@ SET @saved_cs_client     = @@character_set_client;
 SET character_set_client = @saved_cs_client;
 
 --
+-- View for Non-Sales headcount actuals derived from actuals_data
+-- Provides ns_pg1..ns_pg7 based on a conservative trainee ratio (15%)
+--
+DROP VIEW IF EXISTS `v_non_sales_headcount_actuals`;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE VIEW `v_non_sales_headcount_actuals` AS
+SELECT 
+  ad.team_id,
+  ad.period_date,
+  CAST(ROUND(ad.headcount_pg1 * 0.15) AS SIGNED) AS ns_pg1_headcount,
+  CAST(ROUND(ad.headcount_pg2 * 0.15) AS SIGNED) AS ns_pg2_headcount,
+  CAST(ROUND(ad.headcount_pg3 * 0.15) AS SIGNED) AS ns_pg3_headcount,
+  CAST(ROUND(ad.headcount_pg4 * 0.15) AS SIGNED) AS ns_pg4_headcount,
+  CAST(ROUND(ad.headcount_pg5 * 0.15) AS SIGNED) AS ns_pg5_headcount,
+  CAST(ROUND(ad.headcount_pg6 * 0.15) AS SIGNED) AS ns_pg6_headcount,
+  CAST(ROUND(ad.headcount_pg7 * 0.15) AS SIGNED) AS ns_pg7_headcount
+FROM actuals_data ad;
+SET character_set_client = @saved_cs_client;
+
+--
 -- Dumping routines for database 'mock_actuals_database'
 --
 /*!50003 DROP PROCEDURE IF EXISTS `populate_historical_actuals` */;

@@ -16,7 +16,7 @@ body {
     overflow: hidden;
 }
 
-/* Bank of America Color Palette */
+/* Color Palette */
 :root {
     --boa-red: #E31837;
     --boa-dark-red: #B71234;
@@ -329,6 +329,46 @@ body {
     display: block;
 }
 
+/* Headcount mini-subtabs */
+.subtabs {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 10px 0;
+}
+
+.subtab {
+    padding: 6px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background-color: var(--boa-light-gray);
+    color: var(--boa-dark-blue);
+}
+
+.subtab-sales {
+    background-color: var(--boa-light-gray);
+    border-color: #cfd4da;
+    color: #495057;
+}
+
+.subtab-non-sales {
+    background-color: var(--boa-light-gray);
+    border-color: #cfd4da;
+    color: #495057;
+}
+
+.subtab.active {
+    background-color: var(--boa-blue);
+    border-color: var(--boa-blue);
+    color: var(--boa-white);
+    font-weight: 600;
+}
+
+.subtab-content {
+    display: block;
+}
+
 .section-header {
     font-size: 12px;
     padding: 4px;
@@ -418,6 +458,11 @@ td.forecast-col:has(input) {
 input[type="number"], 
 .selectable-input {
     cursor: text;
+}
+
+/* Invalid input highlight */
+.invalid-input {
+    outline: 2px solid #dc3545 !important;
 }
 
 /* When Ctrl or Shift is held, show selection cursor */

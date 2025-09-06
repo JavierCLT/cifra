@@ -39,7 +39,12 @@ async function renderIncentiveTab(data) {
                 float: right;
             `;
             adminButton.textContent = 'Open Incentive Admin Panel';
-            adminButton.onclick = () => window.open('incentive-admin.html', '_blank');
+            adminButton.onclick = () => {
+                const teamId = AppState.currentTeam;
+                const versionId = AppState.currentVersion?.version_id;
+                const url = `incentive-admin.html?teamId=${encodeURIComponent(teamId)}${versionId ? `&versionId=${encodeURIComponent(versionId)}` : ''}`;
+                window.open(url, '_blank');
+            };
             adminButton.onmouseover = () => adminButton.style.backgroundColor = '#0052a3';
             adminButton.onmouseout = () => adminButton.style.backgroundColor = '#0066cc';
             
@@ -269,6 +274,26 @@ async function renderIncentiveTab(data) {
     html += '</tbody></table></div>';
     
     container.innerHTML = html;
+
+    // Persist and restore horizontal scroll for better live-preview UX
+    try {
+        const wrapper = container.querySelector('.data-table-wrapper');
+        if (wrapper) {
+            // Restore last position if we have one
+            if (typeof AppState !== 'undefined' && AppState.scrollPositions && AppState.scrollPositions.incentive !== undefined) {
+                const saved = AppState.scrollPositions.incentive;
+                if (!isNaN(saved)) {
+                    requestAnimationFrame(() => { wrapper.scrollLeft = saved; });
+                }
+            }
+            // Keep saving as user scrolls so refreshes don’t jump
+            wrapper.addEventListener('scroll', () => {
+                if (typeof AppState !== 'undefined' && AppState.scrollPositions) {
+                    AppState.scrollPositions.incentive = wrapper.scrollLeft;
+                }
+            }, { passive: true });
+        }
+    } catch (e) { /* no-op */ }
 }
 
 // Helper function to calculate average

@@ -134,3 +134,23 @@ const API = {
         return await API.request('/health');
     }
 };
+
+// Non-Sales Headcount API
+API.nonSales = {
+    async getActualsTeam(teamId) {
+        const result = await API.request(`/non-sales/actuals/team/${teamId}`);
+        return result.data;
+    },
+    async updateData(data) {
+        return await API.request('/non-sales/data', {
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+    },
+    async getTeam(teamId, versionId) {
+        const params = new URLSearchParams();
+        if (versionId) params.append('versionId', versionId);
+        const result = await API.request(`/non-sales/team/${teamId}?${params}`);
+        return result.data;
+    }
+};

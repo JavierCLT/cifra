@@ -17,6 +17,7 @@ const teamsRoutes = require('./routes/teams');
 const forecastsRoutes = require('./routes/forecasts');
 const actualsRoutes = require('./routes/actuals');
 const incentivesRoutes = require('./routes/incentives');
+const nonSalesRoutes = require('./routes/nonSales');
 
 // Create Express app
 const app = express();
@@ -101,6 +102,7 @@ app.use('/api/teams', teamsRoutes);
 app.use('/api/forecasts', forecastsRoutes);
 app.use('/api/actuals', actualsRoutes);
 app.use('/api/incentives', incentivesRoutes);
+app.use('/api/non-sales', nonSalesRoutes);
 
 // Combined data endpoint
 app.get('/api/team-data/:teamId/:versionId', async (req, res) => {

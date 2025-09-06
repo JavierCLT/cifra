@@ -187,19 +187,27 @@
         .success-message {
             background-color: #d4edda;
             color: #155724;
-            padding: 12px;
+            padding: 12px 16px;
             border-radius: 4px;
-            margin-bottom: 20px;
             display: none;
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
         }
         
         .error-message {
             background-color: #f8d7da;
             color: #721c24;
-            padding: 12px;
+            padding: 12px 16px;
             border-radius: 4px;
-            margin-bottom: 20px;
             display: none;
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
         }
     </style>
 </head>
@@ -212,6 +220,15 @@
         <div class="tab-nav">
             <button class="tab-btn active" onclick="switchAdminTab('compensable')">Compensable Metrics</button>
             <button class="tab-btn" onclick="switchAdminTab('ratios')">Quality Ratios</button>
+            <div style="margin-left:auto; display:flex; gap:10px; align-items:center;">
+                <label for="versionSelect"><strong>Forecast Version:</strong></label>
+                <select id="versionSelect" onchange="loadTeamRatios()"></select>
+            </div>
+        </div>
+        <div id="readOnlyBanner" class="note" style="display:none; display:flex; align-items:center; gap:10px;">
+            <span>Read Only: You are viewing a non-current forecast version. Editing is disabled.</span>
+            <span title="Editing is permitted only on the current forecast version. Use the selector to switch back to the current version to enable editing." style="cursor:help; padding:2px 6px; border-radius:50%; background:#0066cc; color:white; font-weight:bold;">i</span>
+            <button id="switchCurrentBtn" class="save-btn" style="padding:6px 12px; font-size:12px;">Switch to Current</button>
         </div>
         
         <div id="successMessage" class="success-message"></div>
@@ -223,10 +240,8 @@
         <h2>Compensable Metrics Configuration</h2>
         <p>Check the metrics that each team gets compensated on:</p>
         
-        <!-- MOVED SAVE BUTTON TO TOP -->
         <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-            <button class="save-btn" onclick="saveCompensableMetrics()">Save Compensable Metrics</button>
-            <span style="font-size: 14px; color: #666;">Changes are saved per team</span>
+            <span style="font-size: 14px; color: #666;">Changes are saved automatically per team</span>
         </div>
         
         <div class="metrics-grid" id="metricsGrid">
@@ -242,8 +257,7 @@
             <!-- Team rows will be dynamically generated -->
         </div>
         
-        <!-- OPTIONAL: Keep another save button at bottom for convenience -->
-        <button class="save-btn" onclick="saveCompensableMetrics()" style="margin-top: 20px;">Save Compensable Metrics</button>
+        <!-- Autosave enabled: no manual save button -->
         </div>
         </div>
         
@@ -279,7 +293,7 @@
                     </tbody>
                 </table>
                 
-                <button class="save-btn" onclick="saveQualityRatios()">Save Quality Ratios</button>
+                <!-- Autosave enabled: no manual save button -->
             </div>
         </div>
     </div>
@@ -296,7 +310,7 @@
                 const response = await fetch('/api/teams');
                 const data = await response.json();
                 teams = data.data || data; // Handle both response formats
-                
+
                 // Populate team selector
                 const teamSelect = document.getElementById('teamSelect');
                 teamSelect.innerHTML = '';
@@ -306,14 +320,57 @@
                     option.textContent = team.team_name;
                     teamSelect.appendChild(option);
                 });
-                
+
+                // Load forecast versions and populate selector
+                const vRes = await fetch('/api/forecasts/versions');
+                const vJson = await vRes.json();
+                const versions = vJson.data || [];
+                const versionSelect = document.getElementById('versionSelect');
+                versionSelect.innerHTML = '';
+                versions.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = v.version_id;
+                    opt.textContent = v.version_name;
+                    versionSelect.appendChild(opt);
+                });
+                // Determine current app version and set defaults
+                let currentVersionId = null;
+                try {
+                    const curRes = await fetch('/api/forecasts/current');
+                    if (curRes.ok) {
+                        const cur = await curRes.json();
+                        if (cur && cur.data && cur.data.version_id) {
+                            currentVersionId = String(cur.data.version_id);
+                        }
+                    }
+                } catch (e) { /* ignore */ }
+                window.__currentVersionId = currentVersionId;
+
+                // Read query params to sync with main app selections
+                const params = new URLSearchParams(window.location.search);
+                const qpVersion = params.get('versionId');
+                const qpTeam = params.get('teamId');
+
+                // Set version select: prefer query param, else current, else first
+                if (qpVersion && Array.from(versionSelect.options).some(o => o.value === qpVersion)) {
+                    versionSelect.value = qpVersion;
+                } else if (currentVersionId && Array.from(versionSelect.options).some(o => o.value === currentVersionId)) {
+                    versionSelect.value = currentVersionId;
+                } else if (versions.length) {
+                    versionSelect.value = versions[0].version_id;
+                }
+
                 // Load compensable metrics
                 await loadCompensableMetrics();
-                
-                // Load quality ratios for first team
+
+                // Preselect team from query param if provided
                 if (teams.length > 0) {
+                    if (qpTeam && Array.from(teamSelect.options).some(o => o.value === qpTeam)) {
+                        teamSelect.value = qpTeam;
+                    }
                     await loadTeamRatios();
                 }
+                enforceReadOnly();
             } catch (error) {
                 showError('Failed to initialize admin panel: ' + error.message);
             }
@@ -334,7 +391,8 @@
         
         async function loadCompensableMetrics() {
             try {
-                const response = await fetch('/api/incentives/compensable-metrics');
+                const versionId = document.getElementById('versionSelect').value;
+                const response = await fetch(`/api/incentives/compensable-metrics?versionId=${versionId}`);
                 const result = await response.json();
                 
                 if (result.success) {
@@ -379,6 +437,10 @@
                                 m.team_id === team.team_id && m.metric_category === metric
                             );
                             checkbox.checked = metricData ? metricData.is_compensable : false;
+                            // Auto-save and broadcast on change for real-time effects
+                            checkbox.addEventListener('change', async () => {
+                                await saveCompensableMetrics();
+                            });
                             
                             checkDiv.appendChild(checkbox);
                             grid.appendChild(checkDiv);
@@ -394,11 +456,12 @@
         async function loadTeamRatios() {
             try {
                 const teamId = document.getElementById('teamSelect').value;
+                const versionId = document.getElementById('versionSelect').value;
                 
                 // FIX #5: Simplified API call without period
-                const response = await fetch(`/api/incentives/quality-ratios/${teamId}`);
+                const response = await fetch(`/api/incentives/quality-ratios/${teamId}?versionId=${versionId}`);
                 const result = await response.json();
-                
+
                 if (result.success || result) { // Handle both response formats
                     currentQualityRatios = result.data || result;
                     
@@ -422,7 +485,8 @@
                         const row = document.createElement('tr');
                         // FIX #5: Handle new structure
                         const ratioKey = ratio.type + '_ratio';
-                        const currentValue = currentQualityRatios[ratioKey] || currentQualityRatios[ratio.type] || 1.0;
+                        const rawVal = (currentQualityRatios[ratioKey] ?? currentQualityRatios[ratio.type]);
+                        const currentValue = (rawVal === undefined || rawVal === null) ? 1.0 : rawVal;
                         row.innerHTML = `
                             <td>${ratio.desc}</td>
                             <td>
@@ -431,7 +495,7 @@
                                        min="0" 
                                        max="200" 
                                        step="1" 
-                                       value="${Math.round(currentValue * 100)}">
+                                       value="${Math.round((currentValue || 0) * 100)}">
                             </td>
                             <td style="text-align: left; font-size: 12px; color: #666;">
                                 ${getRatioDescription(ratio.type)}
@@ -439,9 +503,42 @@
                         `;
                         tbody.appendChild(row);
                     });
+                    // Single global debounced autosave for all inputs to avoid rate limits
+                    if (!tbody.__autosaveBound) {
+                        tbody.addEventListener('input', () => scheduleSaveQualityRatios());
+                        tbody.__autosaveBound = true;
+                    }
+                    enforceReadOnly();
                 }
             } catch (error) {
                 showError('Failed to load quality ratios: ' + error.message);
+            }
+        }
+
+        function enforceReadOnly() {
+            const versionSelect = document.getElementById('versionSelect');
+            const banner = document.getElementById('readOnlyBanner');
+            const readOnly = window.__currentVersionId ? (String(versionSelect.value) !== String(window.__currentVersionId)) : false;
+
+            // Disable all inputs and save buttons when read-only
+            document.querySelectorAll('#metricsGrid input[type="checkbox"], #ratiosTableBody input[type="number"]').forEach(inp => {
+                inp.disabled = readOnly;
+            });
+            const saveButtons = document.querySelectorAll('.save-btn:not(#switchCurrentBtn)');
+            saveButtons.forEach(btn => btn.disabled = readOnly);
+            banner.style.display = readOnly ? 'flex' : 'none';
+
+            // Wire switch to current button
+            const switchBtn = document.getElementById('switchCurrentBtn');
+            if (switchBtn) {
+                switchBtn.onclick = () => {
+                    if (window.__currentVersionId) {
+                        versionSelect.value = window.__currentVersionId;
+                        loadTeamRatios();
+                        enforceReadOnly();
+                    }
+                };
+                switchBtn.style.display = readOnly ? 'inline-block' : 'none';
             }
         }
         
@@ -468,7 +565,8 @@
                 updates.push({
                     team_id: parseInt(checkbox.dataset.teamId),
                     metric: checkbox.dataset.metric,
-                    is_compensable: checkbox.checked
+                    is_compensable: checkbox.checked,
+                    version_id: parseInt(document.getElementById('versionSelect').value)
                 });
             });
             
@@ -478,12 +576,23 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
                         updates,
-                        updatedBy: 'admin@bankofamerica.com'
+                        updatedBy: 'admin@example.com'
                     })
                 });
                 
                 if (response.ok) {
                     showSuccess('Compensable metrics saved successfully!');
+                    // Broadcast change for live refresh in main app
+                    try {
+                        const versionId = document.getElementById('versionSelect').value;
+                        const teamId = document.getElementById('teamSelect').value;
+                        const bc = new BroadcastChannel('incentiveConfig');
+                        bc.postMessage({ type: 'compensable', teamId: parseInt(teamId), versionId: parseInt(versionId), ts: Date.now() });
+                    } catch (e) {
+                        const versionId = document.getElementById('versionSelect').value;
+                        const teamId = document.getElementById('teamSelect').value;
+                        localStorage.setItem('incentive_config_updated', JSON.stringify({ type: 'compensable', teamId: parseInt(teamId), versionId: parseInt(versionId), ts: Date.now() }));
+                    }
                 } else {
                     const error = await response.json();
                     showError('Error saving metrics: ' + error.error);
@@ -493,40 +602,72 @@
             }
         }
         
-        // FIX #5: Updated saveQualityRatios to not include period
-        async function saveQualityRatios() {
+        // Global debounced autosave with request coalescing and retry
+        let ratiosSaveTimer = null;
+        let ratiosSaveInFlight = false;
+        let ratiosSavePending = false;
+        function scheduleSaveQualityRatios() {
+            clearTimeout(ratiosSaveTimer);
+            ratiosSaveTimer = setTimeout(() => doSaveQualityRatios(), 800);
+        }
+
+        async function doSaveQualityRatios() {
+            if (ratiosSaveInFlight) { ratiosSavePending = true; return; }
             const teamId = document.getElementById('teamSelect').value;
-            
+            const versionId = document.getElementById('versionSelect').value;
             const ratios = {
                 team_id: parseInt(teamId),
+                version_id: parseInt(versionId),
                 investment_accounts_ratio: parseFloat(document.getElementById('ratio_investment_accounts').value) / 100,
                 investment_assets_ratio: parseFloat(document.getElementById('ratio_investment_assets').value) / 100,
                 banking_accounts_ratio: parseFloat(document.getElementById('ratio_banking_accounts').value) / 100,
                 banking_assets_ratio: parseFloat(document.getElementById('ratio_banking_assets').value) / 100,
-                wealth_overlay_ratio: parseFloat(document.getElementById('ratio_wealth_accounts').value) / 100,
+                wealth_accounts_ratio: parseFloat(document.getElementById('ratio_wealth_accounts').value) / 100,
                 wealth_assets_ratio: parseFloat(document.getElementById('ratio_wealth_assets').value) / 100,
-                headcount_ratio: parseFloat(document.getElementById('ratio_productive_headcount').value) / 100,
+                productive_headcount_ratio: parseFloat(document.getElementById('ratio_productive_headcount').value) / 100,
                 ar_enroll_ratio: parseFloat(document.getElementById('ratio_ar_enroll').value) / 100,
                 ar_book_ratio: parseFloat(document.getElementById('ratio_ar_book').value) / 100,
                 ar_ramp_ratio: parseFloat(document.getElementById('ratio_ar_ramp').value) / 100
             };
-            
-            try {
-                const response = await fetch('/api/incentives/quality-ratios', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(ratios)
-                });
-                
-                if (response.ok) {
-                    showSuccess('Quality ratios saved successfully!');
-                } else {
-                    const error = await response.json();
-                    showError('Error saving ratios: ' + (error.error || 'Unknown error'));
+
+            ratiosSaveInFlight = true;
+            let attempt = 0;
+            const maxAttempts = 3;
+            while (attempt < maxAttempts) {
+                attempt++;
+                try {
+                    const resp = await fetch('/api/incentives/quality-ratios', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(ratios)
+                    });
+                    if (resp.ok) {
+                        showSuccess('Quality ratios saved successfully!');
+                        try {
+                            const bc = new BroadcastChannel('incentiveConfig');
+                            bc.postMessage({ type: 'ratios', teamId: parseInt(teamId), versionId: parseInt(versionId), ts: Date.now() });
+                        } catch (e) {
+                            localStorage.setItem('incentive_config_updated', JSON.stringify({ type: 'ratios', teamId: parseInt(teamId), versionId: parseInt(versionId), ts: Date.now() }));
+                        }
+                        break;
+                    } else if (resp.status === 429) {
+                        const retryAfter = parseInt(resp.headers.get('Retry-After') || '1', 10);
+                        await new Promise(r => setTimeout(r, (retryAfter || attempt) * 1000));
+                        continue;
+                    } else {
+                        let msg = 'Unknown error';
+                        try { const err = await resp.json(); msg = err.error || msg; }
+                        catch { msg = await resp.text(); }
+                        showError('Error saving ratios: ' + msg);
+                        break;
+                    }
+                } catch (e) {
+                    showError('Error saving ratios: ' + (e && e.message ? e.message : String(e)));
+                    break;
                 }
-            } catch (error) {
-                showError('Error saving ratios: ' + error.message);
             }
+            ratiosSaveInFlight = false;
+            if (ratiosSavePending) { ratiosSavePending = false; doSaveQualityRatios(); }
         }
         
         function showSuccess(message) {

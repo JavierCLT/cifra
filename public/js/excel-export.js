@@ -45,7 +45,7 @@ function exportToExcel() {
         XLSX.writeFile(wb, filename);
         
         hideLoadingIndicator();
-        showSaveIndicator();
+        
         
         // Log export event
         console.log('Excel exported:', {
@@ -167,19 +167,9 @@ function createMetadataSheet() {
         ['Forecast Version:', AppState.currentForecast],
         ['Tab:', AppState.currentTab === 'headcount' ? 'Headcount' : 'Production'],
         [''],
-        ['Data Range'],
-        ['Start Period:', 'Jan-23'],
-        ['End Period:', 'Dec-25'],
-        [''],
-        ['Notes'],
-        ['- Actual data is shown with gray background'],
-        ['- Forecast data is shown with blue background'],
-        ['- Quarterly columns show aggregated values'],
-        ['- Yearly columns show totals or averages as appropriate'],
-        [''],
         ['Legend'],
-        ['PG Levels:', 'PG1 through PG7 represent different position grades'],
-        ['Productivity:', 'Measured in accounts per headcount per day'],
+        ['PG Levels:', 'PG1 through PG7 represent different Production Groups'],
+        ['Productivity:', 'Measured in accounts per advisor per week'],
         ['Product Mix:', 'Percentage distribution across products (must sum to 100%)'],
         ['ABPA:', 'Average Balance Per Account in dollars'],
         ['Total Balances:', 'Shown in millions of dollars']
@@ -262,7 +252,7 @@ async function exportAuditLog() {
         XLSX.writeFile(wb, filename);
         
         hideLoadingIndicator();
-        showSaveIndicator();
+        
         
     } catch (error) {
         hideLoadingIndicator();
@@ -409,7 +399,7 @@ async function exportAllTeamsSummary() {
         XLSX.writeFile(wb, filename);
         
         hideLoadingIndicator();
-        showSaveIndicator();
+        
         
     } catch (error) {
         hideLoadingIndicator();

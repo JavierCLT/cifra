@@ -39,12 +39,42 @@ function toDate (periodStr) {
  * Returns: [{ team_id, metric_category, is_compensable }, … ]
  */
 router.get('/compensable-metrics', async (req, res) => {
+  const versionId = Number(req.query.versionId) || null;
   try {
-    const [rows] = await req.app.locals.forecastPool.query(
-      `SELECT team_id, metric_category, is_compensable
+    const pool = req.app.locals.forecastPool;
+    if (versionId) {
+      // Prefer sentinel effective_date for the selected version
+      const [sentinel] = await pool.query(
+        `SELECT team_id, metric_category, is_compensable
+           FROM incentive_compensable_metrics
+          WHERE version_id = ? AND effective_date = '2099-12-01'`,
+        [versionId]
+      );
+      if (sentinel.length) return res.json({ success: true, data: sentinel });
+      // Fallback to latest effective_date per team/metric for that version
+      const [rows] = await pool.query(
+        `SELECT icm.team_id, icm.metric_category, icm.is_compensable
+           FROM incentive_compensable_metrics icm
+           JOIN (
+                 SELECT team_id, metric_category, version_id, MAX(effective_date) AS eff
+                   FROM incentive_compensable_metrics
+                  WHERE version_id = ?
+                  GROUP BY team_id, metric_category, version_id
+                ) latest
+             ON icm.team_id = latest.team_id
+            AND icm.metric_category = latest.metric_category
+            AND icm.version_id = latest.version_id
+            AND (icm.effective_date <=> latest.eff)`,
+        [versionId]
+      );
+      return res.json({ success: true, data: rows });
+    }
+    // No version filter: return all rows (legacy)
+    const [allRows] = await pool.query(
+      `SELECT team_id, metric_category, is_compensable, version_id, effective_date
          FROM incentive_compensable_metrics`
     );
-    return res.json({ success: true, data: rows });
+    return res.json({ success: true, data: allRows });
   } catch (err) {
     logger.error(err);
     return res.status(500).json({ error: 'Failed to fetch compensable metrics' });
@@ -65,15 +95,20 @@ router.post('/compensable-metrics', async (req, res) => {
   try {
     await conn.beginTransaction();
     for (const u of updates) {
+      const teamId = parseInt(u.team_id);
+      const metric = u.metric;
+      const isComp = !!u.is_compensable;
+      const versionId = u.version_id != null ? parseInt(u.version_id) : 0;
+      // Use sentinel effective_date so we upsert the same row per version
       await conn.query(
         `INSERT INTO incentive_compensable_metrics
-           (team_id, metric_category, is_compensable, updated_by)
-         VALUES (?, ?, ?, ?)
+           (team_id, metric_category, version_id, effective_date, is_compensable, updated_by)
+         VALUES (?, ?, ?, '2099-12-01', ?, ?)
          ON DUPLICATE KEY UPDATE
            is_compensable = VALUES(is_compensable),
            updated_by     = VALUES(updated_by),
            updated_at     = NOW()`,
-        [u.team_id, u.metric, !!u.is_compensable, updatedBy]
+        [teamId, metric, versionId, isComp, updatedBy]
       );
     }
     await conn.commit();
@@ -184,15 +219,16 @@ router.post('/quality-ratios', async (req, res) => {
   /* 2c-1  New body shape (no version / period)                          */
   /* ------------------------------------------------------------------ */
   if (req.body && req.body.team_id && !req.body.ratios) {
-    const { team_id, ...ratioFields } = req.body;
+    const { team_id, version_id = null, ...ratioFields } = req.body;
     const conn = await pool.getConnection();
 
     try {
       await conn.beginTransaction();
 
-      // Use sentinel period/version so they don't clash with legacy data
+      // Store as version-specific (requested behavior). Use a sentinel period
+      // so ratios are version-wide, not month-specific.
       const periodDate = '2099-12-01';
-      const versionId  = 0;
+      const versionId  = version_id != null ? Number(version_id) : 0;
 
       for (const [typeKey, value] of Object.entries(ratioFields)) {
         if (!typeKey.endsWith('_ratio')) continue;              // skip junk

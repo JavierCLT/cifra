@@ -234,50 +234,37 @@ function renderProductionTab(data, opts = {}) {
     const container = document.getElementById(opts.containerId || 'production-tab');
     const mode = opts.mode || 'all'; // 'investments' | 'banking' | 'all'
     const months = generateMonthList();
-    // Used by several sections (both investments and banking)
     const totalDashCells = QUARTERS.length + YEARS.length;
-    
-    let html = '<div class="data-table-wrapper"><table class="data-table">';
-    
-    // Header rows
+
+    let html = '<div class="production-layout">';
+
+    let baselineColumn = '';
+    if (mode === 'investments' && !AppState.isGroupView) {
+        baselineColumn = renderProductionBaselineColumn(data, months);
+        if (baselineColumn) {
+            html += baselineColumn;
+        }
+    }
+
+    html += '<div class="production-table-container"><div class="data-table-wrapper"><table class="data-table production-table">';
+
     html += '<thead><tr><th rowspan="2">Metric</th>';
-    
-    // Business days in header
     months.forEach((month, idx) => {
         const isForecast = data.forecastStatus[month] === 'Forecast';
         const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
         html += `<th class="${isForecast ? 'forecast-col' : 'actual-col'}">${businessDays}</th>`;
     });
-    
-    // Quarter columns
-    QUARTERS.forEach(quarter => {
-        html += `<th class="quarter-col">Total</th>`;
-    });
-    
-    // Year columns - using YEARS array
-    YEARS.forEach(year => {
-        html += `<th class="year-total-col">FY${year.slice(-2)}</th>`;
-    });
+    QUARTERS.forEach(quarter => { html += `<th class="quarter-col">Total</th>`; });
+    YEARS.forEach(year => { html += `<th class="year-total-col">FY${year.slice(-2)}</th>`; });
     html += '</tr><tr>';
-    
-    // Month names
     months.forEach(month => {
         const isForecast = data.forecastStatus[month] === 'Forecast';
         html += `<th class="${isForecast ? 'forecast-col' : 'actual-col'}">${month}</th>`;
     });
-    
-    // Quarter labels
-    QUARTERS.forEach(quarter => {
-        html += `<th class="quarter-col">${quarter}</th>`;
-    });
-    
-    // Year labels
-    YEARS.forEach(() => {
-        html += '<th class="year-total-col">Total</th>';
-    });
+    QUARTERS.forEach(quarter => { html += `<th class="quarter-col">${quarter}</th>`; });
+    YEARS.forEach(() => { html += '<th class="year-total-col">Total</th>'; });
     html += '</tr></thead><tbody>';
-    
-    // Total Productive Headcount
+
     html += '<tr class="subtotal-row"><td>Total Productive Headcount</td>';
     months.forEach(month => {
         const total = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
@@ -758,10 +745,31 @@ function renderProductionTab(data, opts = {}) {
     });
     }
     
-    html += '</tbody></table></div>';
+    html += '</tbody></table></div></div>';
+
+    if (mode === 'investments' && !AppState.isGroupView && baselineColumn) {
+        html += '<div class="production-actions"><button type="button" class="production-admin-btn">Production Admin Panel</button></div>';
+    }
+
+    html += '</div>';
     container.innerHTML = html;
-    
-    // Setup input selection for bulk operations
+
+    if (mode === 'investments' && !AppState.isGroupView) {
+        const column = container.querySelector('.production-baseline-column');
+        if (column) {
+            bindProductionBaselineEvents(column);
+        }
+        const actionBtn = container.querySelector('.production-actions .production-admin-btn');
+        if (actionBtn) {
+            actionBtn.addEventListener('click', () => {
+                const versionId = AppState.currentVersion?.version_id;
+                openProductionAdminModal(versionId);
+            });
+        }
+    }
+
+    applyProductionBaselines({ data, months, updateDom: mode === 'investments' });
+
     setupInputSelection();
 }
 

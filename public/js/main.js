@@ -20,6 +20,8 @@ const AppState = {
     selectedInputs: [],
     undoStack: [],
     redoStack: [],
+    productionBaselineState: {},
+    productionConfig: null,
     scrollPositions: { 
         headcount: 0,
         headcount_sales: 0,
@@ -39,6 +41,10 @@ const AppState = {
 const PG_LEVELS = ['PG1', 'PG2', 'PG3', 'PG4', 'PG5', 'PG6', 'PG7'];
 const PRODUCTS = ['Product A', 'Product B', 'Product C', 'Product D'];
 const ADDITIONAL_PRODUCTS = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH'];
+const slugify = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const SELF_DIRECTED_PRODUCT_NAME = PRODUCTS[0];
+const MGIA_PRODUCT_NAME = PRODUCTS[2];
 let GROUPS = {}; // Will be populated from API
 
 // Helpers to manage scroll per (tab, subtab)
@@ -63,10 +69,639 @@ function getActiveWrapper() {
     return document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
 }
 
+function clamp(value, min, max) {
+    if (!Number.isFinite(value)) {
+        return min;
+    }
+    return Math.min(Math.max(value, min), max);
+}
+
+function toNumber(value, fallback = 0) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+}
+
+function formatThousands(num, digits = 1) {
+    const value = Number(num);
+    if (!Number.isFinite(value)) {
+        return "0";
+    }
+    const thousands = value / 1000;
+    return thousands.toLocaleString(undefined, {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+    });
+}
+function getDefaultProductionConfig() {
+    const defaults = { productivity: {}, abpa: {} };
+    MONTH_ABBREVIATIONS.forEach(month => {
+        defaults.productivity[month] = 1;
+        defaults.abpa[month] = 1;
+    });
+    return {
+        seasonality: defaults,
+        growth: {
+            productivity: 0,
+            abpa: 0,
+            mgiaMix: 0
+        }
+    };
+}
+
+function normalizeProductionConfig(config) {
+    const base = getDefaultProductionConfig();
+    if (!config || typeof config !== 'object') {
+        return base;
+    }
+
+    const normalized = {
+        seasonality: {
+            productivity: { ...base.seasonality.productivity },
+            abpa: { ...base.seasonality.abpa }
+        },
+        growth: {
+            productivity: 0,
+            abpa: 0,
+            mgiaMix: 0
+        }
+    };
+
+    const seasonalityProductivity = (config.seasonality && config.seasonality.productivity) ||
+        config.seasonalityProductivity ||
+        config.seasonality_productivity ||
+        {};
+    const seasonalityAbpa = (config.seasonality && config.seasonality.abpa) ||
+        config.seasonalityAbpa ||
+        config.seasonality_abpa ||
+        {};
+
+    MONTH_ABBREVIATIONS.forEach(month => {
+        normalized.seasonality.productivity[month] = toNumber(seasonalityProductivity[month], 1);
+        normalized.seasonality.abpa[month] = toNumber(seasonalityAbpa[month], 1);
+    });
+
+    const growthSource = config.growth || {};
+    normalized.growth.productivity = toNumber(
+        growthSource.productivity,
+        toNumber(config.productivityGrowthRate ?? config.productivity_growth_rate, 0)
+    );
+    normalized.growth.abpa = toNumber(
+        growthSource.abpa,
+        toNumber(config.abpaGrowthRate ?? config.abpa_growth_rate, 0)
+    );
+    normalized.growth.mgiaMix = toNumber(
+        growthSource.mgiaMix,
+        toNumber(config.mgiaMixGrowthRate ?? config.mgia_mix_growth_rate, 0)
+    );
+
+    return normalized;
+}
+
+async function loadProductionConfig(versionId) {
+    if (!versionId) {
+        AppState.productionConfig = getDefaultProductionConfig();
+        return AppState.productionConfig;
+    }
+    try {
+        const rawConfig = await API.productionConfig.get(versionId);
+        AppState.productionConfig = normalizeProductionConfig(rawConfig);
+    } catch (error) {
+        console.error('Failed to load production configuration', error);
+        AppState.productionConfig = getDefaultProductionConfig();
+    }
+    return AppState.productionConfig;
+}
+
+function getProductionBaselineKey() {
+    if (!AppState.currentVersion) {
+        return 'unknown';
+    }
+    return `${AppState.currentVersion.version_id}|${AppState.currentTeam}`;
+}
+
+function getProductionBaselineState() {
+    if (!AppState.productionBaselineState) {
+        AppState.productionBaselineState = {};
+    }
+    const key = getProductionBaselineKey();
+    if (!AppState.productionBaselineState[key]) {
+        AppState.productionBaselineState[key] = {
+            period: 12,
+            productivity: null,
+            mix: {},
+            abpa: {}
+        };
+    }
+    return AppState.productionBaselineState[key];
+}
+
+function computeProductionBaselineAverages(data, months, period) {
+    const actualMonths = months.filter(month => data.forecastStatus[month] !== 'Forecast');
+    const trailing = actualMonths.slice(-period);
+    const result = {
+        productivity: 0,
+        mix: {},
+        abpa: {}
+    };
+    if (trailing.length === 0) {
+        PRODUCTS.forEach(product => {
+            result.mix[product] = 0;
+            result.abpa[product] = 0;
+        });
+        return result;
+    }
+    result.productivity = trailing.reduce((sum, month) => sum + toNumber(data.productivity[month], 0), 0) / trailing.length;
+    PRODUCTS.forEach(product => {
+        result.mix[product] = trailing.reduce((sum, month) => sum + toNumber(data.productMix[product][month], 0), 0) / trailing.length;
+        result.abpa[product] = trailing.reduce((sum, month) => sum + toNumber(data.abpa[product][month], 0), 0) / trailing.length;
+    });
+    return result;
+}
+
+function updateBaselineAverageCells(column, averages, period) {
+    if (!column) return;
+
+    const periodLabel = column.querySelector('.baseline-avg-value');
+    if (periodLabel) {
+        periodLabel.textContent = `${period} mo`;
+    }
+
+    const resolveSlug = (value) => (typeof slugify === 'function' ? slugify(value) : String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+    const setAvg = (selector, text) => {
+        const cell = column.querySelector(`${selector} .baseline-cell--avg`);
+        if (cell) {
+            cell.textContent = text;
+        }
+    };
+
+    setAvg('.baseline-row--metric[data-baseline-metric="productivity"]', toNumber(averages.productivity, 0).toFixed(2));
+
+    PRODUCTS.forEach(product => {
+        const slug = resolveSlug(product);
+        setAvg(`.baseline-row--metric[data-baseline-metric="mix"][data-baseline-product="${slug}"]`, `${(toNumber(averages.mix[product], 0) * 100).toFixed(1)}%`);
+        setAvg(`.baseline-row--metric[data-baseline-metric="abpa"][data-baseline-product="${slug}"]`, `${formatThousands(toNumber(averages.abpa[product], 0), 0)}K`);
+    });
+
+    column.querySelectorAll('.baseline-section-avg-label').forEach(span => {
+        span.textContent = `AVG ${period} MO`;
+    });
+
+    scheduleBaselineLayoutSync();
+}
+
+function applyProductionBaselines({ data, months, teamId = AppState.currentTeam, updateDom = false } = {}) {
+    if (AppState.isGroupView) return;
+    if (!data) return;
+
+    const baselineState = getProductionBaselineState();
+    if (!baselineState || baselineState.productivity == null) return;
+
+    const config = AppState.productionConfig || getDefaultProductionConfig();
+    const monthList = Array.isArray(months) && months.length
+        ? months
+        : (typeof generateMonthList === 'function' ? generateMonthList() : []);
+    if (!monthList.length) return;
+
+    const forecastMonths = monthList.filter(month => data.forecastStatus[month] === 'Forecast');
+    if (!forecastMonths.length) return;
+
+    const baseYear = parseInt(`20${forecastMonths[0].split('-')[1]}`, 10);
+    if (!Number.isFinite(baseYear)) return;
+
+    const targetRoot = updateDom ? document.getElementById('production-investments-subtab') : null;
+
+    const mixBase = {};
+    PRODUCTS.forEach(product => {
+        mixBase[product] = toNumber(baselineState.mix[product], 0);
+    });
+
+    const otherProducts = PRODUCTS.filter(product => product !== MGIA_PRODUCT_NAME && product !== SELF_DIRECTED_PRODUCT_NAME);
+    const otherBaseSum = otherProducts.reduce((sum, product) => sum + mixBase[product], 0);
+    const mgiaBase = mixBase[MGIA_PRODUCT_NAME] ?? 0;
+
+    forecastMonths.forEach(month => {
+        const [monthKey, yearSuffix] = month.split('-');
+        const fullYear = parseInt(`20${yearSuffix}`, 10);
+        const yearDiff = Number.isFinite(fullYear) ? Math.max(0, fullYear - baseYear) : 0;
+
+        const baseProd = toNumber(baselineState.productivity, 0);
+        const seasonalProd = config.seasonality?.productivity?.[monthKey] ?? 1;
+        const productivityGrowth = Math.pow(1 + (config.growth?.productivity ?? 0), yearDiff);
+        const monthlyProd = Number((baseProd * seasonalProd * productivityGrowth).toFixed(2));
+        data.productivity[month] = monthlyProd.toFixed(2);
+
+        if (updateDom && targetRoot) {
+            const prodInput = targetRoot.querySelector(`input[data-metric="productivity"][data-month="${month}"]`);
+            if (prodInput) {
+                prodInput.value = monthlyProd.toFixed(2);
+            }
+        }
+
+        const mgiaGrowth = config.growth?.mgiaMix ?? 0;
+        const mgiaCap = Math.max(0, 1 - otherBaseSum);
+        const mgiaAdjusted = clamp(mgiaBase * Math.pow(1 + mgiaGrowth, yearDiff), 0, mgiaCap);
+        const selfDirectedAdjusted = clamp(1 - otherBaseSum - mgiaAdjusted, 0, 1);
+
+        PRODUCTS.forEach(product => {
+            if (product === MGIA_PRODUCT_NAME) {
+                data.productMix[product][month] = Number(mgiaAdjusted.toFixed(4));
+            } else if (product === SELF_DIRECTED_PRODUCT_NAME) {
+                data.productMix[product][month] = Number(selfDirectedAdjusted.toFixed(4));
+            } else {
+                data.productMix[product][month] = Number((mixBase[product] ?? 0).toFixed(4));
+            }
+        });
+
+        const totalMix = PRODUCTS.reduce((sum, product) => sum + data.productMix[product][month], 0);
+        if (Math.abs(totalMix - 1) > 0.0001) {
+            const delta = 1 - totalMix;
+            data.productMix[SELF_DIRECTED_PRODUCT_NAME][month] = Number(
+                clamp(data.productMix[SELF_DIRECTED_PRODUCT_NAME][month] + delta, 0, 1).toFixed(4)
+            );
+        }
+
+        if (updateDom && targetRoot) {
+            PRODUCTS.forEach(product => {
+                const mixInput = targetRoot.querySelector(`input[data-metric="mix"][data-month="${month}"][data-product="${product}"]`);
+                if (mixInput) {
+                    mixInput.value = Math.round(data.productMix[product][month] * 100);
+                }
+            });
+        }
+
+        const seasonalAbpa = config.seasonality?.abpa?.[monthKey] ?? 1;
+        const abpaGrowth = Math.pow(1 + (config.growth?.abpa ?? 0), yearDiff);
+        PRODUCTS.forEach(product => {
+            const baseAbpa = toNumber(baselineState.abpa[product], 0);
+            const adjustedAbpa = Math.round(baseAbpa * seasonalAbpa * abpaGrowth);
+            data.abpa[product][month] = adjustedAbpa;
+
+            if (updateDom && targetRoot) {
+                const abpaInput = targetRoot.querySelector(`input[data-metric="abpa"][data-month="${month}"][data-product="${product}"]`);
+                if (abpaInput) {
+                    abpaInput.value = String(Math.round(adjustedAbpa / 1000));
+                }
+            }
+        });
+
+        updateProductionCalculations(teamId, month);
+    });
+
+    if (updateDom) {
+        validateAllProductMix();
+    }
+}
+
+function handleProductionBaselinePeriodChange(event) {
+    const select = event.target;
+    const period = parseInt(select.value, 10);
+    if (!Number.isFinite(period)) return;
+
+    const baselineState = getProductionBaselineState();
+    baselineState.period = period;
+
+    const months = typeof generateMonthList === 'function' ? generateMonthList() : [];
+    const teamKey = `Team ${AppState.currentTeam}`;
+    const data = AppState.teamData[AppState.currentForecast]?.[teamKey];
+    if (data && months.length) {
+        const averages = computeProductionBaselineAverages(data, months, period);
+        updateBaselineAverageCells(select.closest('.production-baseline-column'), averages, period);
+        applyProductionBaselines({
+            data,
+            months,
+            teamId: AppState.currentTeam,
+            updateDom: AppState.currentTab === 'production' && AppState.productionSubtab === 'investments'
+        });
+    }
+}
+
+function handleProductionBaselineInputChange(event) {
+    const input = event.target;
+    const metric = input.dataset.baselineMetric;
+    const product = input.dataset.baselineProduct;
+    const baselineState = getProductionBaselineState();
+    const column = input.closest('.production-baseline-column');
+
+    const normalizeProductName = (name) => {
+        if (!name) return name;
+        const matches = PRODUCTS.filter(productName => productName === name);
+        return matches.length ? matches[0] : name;
+    };
+
+    if (metric === 'productivity') {
+        let value = Number(input.value);
+        if (!Number.isFinite(value)) {
+            value = baselineState.productivity ?? 0;
+        }
+        value = Number(value.toFixed(2));
+        baselineState.productivity = value;
+        input.value = value.toFixed(2);
+    } else if (metric === 'mix') {
+        const productName = normalizeProductName(product);
+        let value = Number(input.value);
+        if (!Number.isFinite(value)) {
+            value = (baselineState.mix[productName] ?? 0) * 100;
+        }
+        value = clamp(value, 0, 100);
+        baselineState.mix[productName] = value / 100;
+        input.value = value.toFixed(1);
+    } else if (metric === 'abpa') {
+        const productName = normalizeProductName(product);
+        let value = Number(input.value);
+        if (!Number.isFinite(value)) {
+            value = toNumber(baselineState.abpa[productName], 0) / 1000;
+        }
+        value = Math.max(0, Math.round(value));
+        baselineState.abpa[productName] = value * 1000;
+        input.value = String(value);
+    } else {
+        return;
+    }
+
+    const months = typeof generateMonthList === 'function' ? generateMonthList() : [];
+    const teamKey = `Team ${AppState.currentTeam}`;
+    const data = AppState.teamData[AppState.currentForecast]?.[teamKey];
+    if (data && months.length) {
+        const period = baselineState.period || 12;
+        const averages = computeProductionBaselineAverages(data, months, period);
+        updateBaselineAverageCells(column, averages, period);
+        applyProductionBaselines({
+            data,
+            months,
+            teamId: AppState.currentTeam,
+            updateDom: AppState.currentTab === 'production' && AppState.productionSubtab === 'investments'
+        });
+    }
+}
+
+function bindProductionBaselineEvents(container) {
+    if (!container) return;
+    const periodSelect = container.querySelector('.production-baseline-period');
+    if (periodSelect) {
+        periodSelect.addEventListener('change', handleProductionBaselinePeriodChange);
+    }
+    container.querySelectorAll('.baseline-input').forEach(input => {
+        input.addEventListener('change', handleProductionBaselineInputChange);
+    });
+}
+
+let baselineLayoutRaf = null;
+
+function syncProductionBaselineLayout(container) {
+    if (!container) return;
+
+    const MIX_DIVIDER_REDUCTION = 17;
+    const ABPA_DIVIDER_REDUCTION = 20;
+
+    const baselineColumn = container.querySelector('.production-baseline-column');
+    const table = container.querySelector('.production-table');
+    if (!baselineColumn || !table) return;
+
+    baselineColumn.querySelectorAll('.baseline-row--metric, .baseline-row--spacer, .baseline-row--divider').forEach(row => {
+        row.style.height = '';
+        row.style.minHeight = '';
+        row.style.maxHeight = '';
+    });
+
+    baselineColumn.querySelectorAll('.baseline-cell--avg, .baseline-cell--input').forEach(cell => {
+        cell.style.height = '';
+    });
+
+    const getAnchorRow = (anchor, productSlug) => {
+        const selector = productSlug ? `tr[data-baseline-anchor="${anchor}"][data-product="${productSlug}"]` : `tr[data-baseline-anchor="${anchor}"]`;
+        return table.querySelector(selector);
+    };
+
+    const setSpacerHeight = (element, anchorRow, adjustment = 0) => {
+        if (!element || !anchorRow) return;
+        const { height } = anchorRow.getBoundingClientRect();
+        const finalHeight = Math.max(0, height + adjustment);
+        element.style.height = `${finalHeight}px`;
+        element.style.minHeight = `${finalHeight}px`;
+        element.style.maxHeight = `${finalHeight}px`;
+    };
+
+    const setRowHeight = (row, anchorRow) => {
+        if (!row || !anchorRow) return;
+        const { height } = anchorRow.getBoundingClientRect();
+        row.style.height = `${height}px`;
+        row.style.minHeight = `${height}px`;
+        row.style.maxHeight = `${height}px`;
+        row.querySelectorAll('.baseline-cell--avg, .baseline-cell--input').forEach(cell => {
+            cell.style.height = `${height}px`;
+        });
+    };
+
+    setSpacerHeight(baselineColumn.querySelector('.baseline-spacer--headcount'), getAnchorRow('headcount'));
+    setRowHeight(baselineColumn.querySelector('.baseline-row--metric[data-baseline-metric="productivity"]'), getAnchorRow('productivity'));
+    setSpacerHeight(baselineColumn.querySelector('.baseline-spacer--totals'), getAnchorRow('total-accounts'));
+    setSpacerHeight(baselineColumn.querySelector('.baseline-spacer--balances'), getAnchorRow('total-balances'));
+
+    const mixDivider = baselineColumn.querySelector('.baseline-divider--mix');
+    setSpacerHeight(mixDivider, getAnchorRow('mix-header'), -MIX_DIVIDER_REDUCTION);
+
+    baselineColumn.querySelectorAll('.baseline-row--metric[data-baseline-metric="mix"]').forEach(row => {
+        const slug = row.getAttribute('data-baseline-product');
+        setRowHeight(row, getAnchorRow('mix', slug));
+    });
+
+    const mixAnchors = Array.from(table.querySelectorAll('tr[data-baseline-anchor="mix"]'));
+    const abpaAnchors = Array.from(table.querySelectorAll('tr[data-baseline-anchor="abpa"]'));
+    const abpaDivider = baselineColumn.querySelector('.baseline-divider--abpa');
+    if (abpaDivider && mixAnchors.length && abpaAnchors.length) {
+        const lastMixRect = mixAnchors[mixAnchors.length - 1].getBoundingClientRect();
+        const firstAbpaRect = abpaAnchors[0].getBoundingClientRect();
+        const rawGap = Math.max(0, firstAbpaRect.top - lastMixRect.bottom);
+        const adjustedGap = Math.max(0, rawGap - ABPA_DIVIDER_REDUCTION);
+        abpaDivider.style.height = `${adjustedGap}px`;
+        abpaDivider.style.minHeight = `${adjustedGap}px`;
+        abpaDivider.style.maxHeight = `${adjustedGap}px`;
+    }
+
+    baselineColumn.querySelectorAll('.baseline-row--metric[data-baseline-metric="abpa"]').forEach(row => {
+        const slug = row.getAttribute('data-baseline-product');
+        setRowHeight(row, getAnchorRow('abpa', slug));
+    });
+
+    const tailSpacer = baselineColumn.querySelector('.baseline-spacer--tail');
+    if (tailSpacer && abpaAnchors.length) {
+        const tbody = table.querySelector('tbody');
+        const tableRect = tbody ? tbody.getBoundingClientRect() : null;
+        const lastAbpaRect = abpaAnchors[abpaAnchors.length - 1].getBoundingClientRect();
+        if (tableRect) {
+            const gap = Math.max(0, tableRect.bottom - lastAbpaRect.bottom);
+            tailSpacer.style.height = `${gap}px`;
+            tailSpacer.style.minHeight = `${gap}px`;
+            tailSpacer.style.maxHeight = `${gap}px`;
+        }
+    }
+}
+
+function scheduleBaselineLayoutSync() {
+    if (baselineLayoutRaf !== null) {
+        return;
+    }
+    baselineLayoutRaf = requestAnimationFrame(() => {
+        baselineLayoutRaf = null;
+        if (AppState.currentTab === 'production' && AppState.productionSubtab === 'investments') {
+            const container = document.getElementById('production-investments-subtab');
+            if (container) {
+                syncProductionBaselineLayout(container);
+            }
+        }
+    });
+}
+
+window.addEventListener('resize', scheduleBaselineLayoutSync);
+
+function initializeProductionToolbar() {
+    const toolbar = document.getElementById('production-toolbar');
+    if (!toolbar) return;
+
+    toolbar.querySelectorAll('.baseline-subtab').forEach(button => {
+        button.addEventListener('click', () => {
+            const target = button.dataset.subtab;
+            if (target) {
+                switchProductionSubtab(target);
+            }
+        });
+    });
+
+    const adminBtn = document.getElementById('production-admin-btn');
+    if (adminBtn) {
+        adminBtn.addEventListener('click', () => {
+            const versionId = AppState.currentVersion ? AppState.currentVersion.version_id : null;
+            openProductionAdminModal(versionId);
+        });
+    }
+
+    toolbar.querySelectorAll('.baseline-subtab').forEach(button => {
+        button.classList.toggle('active', button.dataset.subtab === AppState.productionSubtab);
+    });
+}
+function initializeProductionConfigSync() {
+    if (window.__productionConfigSyncInitialized) {
+        return;
+    }
+    window.__productionConfigSyncInitialized = true;
+    try {
+        const bc = new BroadcastChannel('productionConfig');
+        bc.onmessage = (event) => {
+            const payload = event.data || {};
+            const versionId = Number(payload.versionId);
+            if (!Number.isFinite(versionId)) return;
+            if (!AppState.currentVersion || AppState.currentVersion.version_id !== versionId) return;
+            loadProductionConfig(versionId)
+                .then(() => {
+                    if (AppState.currentTab === 'production') {
+                        const months = typeof generateMonthList === 'function' ? generateMonthList() : [];
+                        const teamKey = `Team ${AppState.currentTeam}`;
+                        const data = AppState.teamData[AppState.currentForecast]?.[teamKey];
+                        if (data && months.length) {
+                            applyProductionBaselines({
+                                data,
+                                months,
+                                teamId: AppState.currentTeam,
+                                updateDom: AppState.productionSubtab === 'investments'
+                            });
+                        }
+                    }
+                })
+                .catch(err => console.error('Failed to refresh production config', err));
+        };
+        window.__productionConfigBC = bc;
+
+    } catch (error) {
+        window.addEventListener('storage', (event) => {
+            if (event.key !== 'production_config_updated') return;
+            try {
+                const payload = JSON.parse(event.newValue || '{}');
+                const versionId = Number(payload?.versionId);
+                if (!Number.isFinite(versionId)) return;
+                if (!AppState.currentVersion || AppState.currentVersion.version_id !== versionId) return;
+                loadProductionConfig(versionId)
+                    .then(() => {
+                        if (AppState.currentTab === 'production') {
+                            const months = typeof generateMonthList === 'function' ? generateMonthList() : [];
+                            const teamKey = `Team ${AppState.currentTeam}`;
+                            const data = AppState.teamData[AppState.currentForecast]?.[teamKey];
+                            if (data && months.length) {
+                                applyProductionBaselines({
+                                    data,
+                                    months,
+                                    teamId: AppState.currentTeam,
+                                    updateDom: AppState.productionSubtab === 'investments'
+                                });
+                            }
+                        }
+                    })
+                    .catch(err => console.error('Failed to refresh production config via storage event', err));
+            } catch (err) {
+                console.error('Failed to parse production config storage event', err);
+            }
+        });
+    }
+}
+
+function openProductionAdminModal(versionId) {
+    const modal = document.getElementById('productionAdminModal');
+    const frame = document.getElementById('productionAdminFrame');
+    if (!modal || !frame) return;
+
+    const resolvedVersion = Number(versionId) || (AppState.currentVersion ? AppState.currentVersion.version_id : null);
+    const url = resolvedVersion ? `/production-admin.html?versionId=${resolvedVersion}` : '/production-admin.html';
+    if (frame.src !== url) {
+        frame.src = url;
+    }
+
+    if (!modal.dataset.outsideCloseBound) {
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeProductionAdminModal();
+            }
+        });
+        modal.dataset.outsideCloseBound = 'true';
+    }
+
+    modal.style.display = 'block';
+}
+
+
+function closeProductionAdminModal() {
+    const modal = document.getElementById('productionAdminModal');
+    if (!modal) return;
+    modal.classList.remove('active');
+}
+
+window.openProductionAdminModal = openProductionAdminModal;
+window.closeProductionAdminModal = closeProductionAdminModal;
+
+window.switchTab = switchTab;
+
+window.switchHeadcountSubtab = switchHeadcountSubtab;
+
+window.switchProductionSubtab = switchProductionSubtab;
+
+window.switchTeam = switchTeam;
+
+window.switchToGroup = switchToGroup;
+
+window.switchForecast = switchForecast;
+
+window.scrollToView = scrollToView;
+
+window.undo = undo;
+
+window.redo = redo;
+
+window.exportToExcel = exportToExcel;
+
+
 // Initialize application
 async function initializeApp() {
     try {
         showLoadingIndicator('Initializing application...');
+        initializeProductionToolbar();
         
         // Check API health
         await API.checkHealth();
@@ -99,6 +734,12 @@ async function initializeApp() {
             AppState.currentVersion = versions[0];
             AppState.currentForecast = versions[0].version_name;
         }
+
+        if (AppState.currentVersion) {
+            await loadProductionConfig(AppState.currentVersion.version_id);
+        } else {
+            AppState.productionConfig = getDefaultProductionConfig();
+        }
         
         // Initialize UI components
         initializeSidebar();
@@ -112,6 +753,7 @@ async function initializeApp() {
 
         // Initialize cross-tab sync for Incentive Admin changes
         initializeIncentiveConfigSync();
+        initializeProductionConfigSync();
         // Initialize paste handlers for Excel-style multi-cell paste
         initializePasteHandlers();
 
@@ -194,7 +836,7 @@ function initializePasteHandlers() {
 
         // Only intercept when multiple cells likely (tabs/newlines present)
         if (!/[\t\n\r]/.test(text)) {
-            // Single value paste – let default behavior happen
+            // Single value paste â€“ let default behavior happen
             return;
         }
 
@@ -655,7 +1297,7 @@ function initializeSidebar() {
         groupHeader.className = 'group-header';
         groupHeader.innerHTML = `
             <span class="group-name">${groupData.displayName}</span>
-            <span class="arrow">▼</span>
+            <span class="arrow">â–¼</span>
         `;
         
         groupHeader.onclick = (e) => {
@@ -1099,10 +1741,19 @@ async function switchForecast() {
     }
     
     const forecastSelect = document.getElementById('forecastSelect');
-    const versionId = parseInt(forecastSelect.value);
+    const versionId = parseInt(forecastSelect.value, 10);
+    if (!Number.isFinite(versionId)) {
+        return;
+    }
     
     AppState.currentVersion = AppState.forecastVersions.find(v => v.version_id === versionId);
+    if (!AppState.currentVersion) {
+        console.warn('Selected forecast version not found');
+        return;
+    }
     AppState.currentForecast = AppState.currentVersion.version_name;
+    
+    await loadProductionConfig(AppState.currentVersion.version_id);
     
     if (AppState.isGroupView) {
         renderCurrentTab();
@@ -1159,14 +1810,25 @@ function switchTab(tabName) {
     }
 
     // Show/minimize production mini-tabs based on active tab
-    const pdSubtabs = document.getElementById('production-subtabs');
-    if (pdSubtabs) {
-        pdSubtabs.style.display = (tabName === 'production') ? 'flex' : 'none';
+    const productionToolbar = document.getElementById('production-toolbar');
+    if (productionToolbar) {
+        productionToolbar.style.display = (tabName === 'production') ? 'flex' : 'none';
+    }
+    if (tabName === 'production') {
         const invC = document.getElementById('production-investments-subtab');
+        const toolbarCaption = document.querySelector('.production-toolbar-caption');
+        if (toolbarCaption) {
+            toolbarCaption.classList.toggle('baseline-note--active', AppState.productionSubtab === 'investments');
+        }
         const bankC = document.getElementById('production-banking-subtab');
-        if (tabName === 'production') {
-            if (AppState.productionSubtab === 'investments') { if (invC) invC.style.display=''; if (bankC) bankC.style.display='none'; }
-            else { if (invC) invC.style.display='none'; if (bankC) bankC.style.display=''; }
+        if (invC) {
+            invC.style.display = AppState.productionSubtab === 'investments' ? '' : 'none';
+        }
+        if (bankC) {
+            bankC.style.display = AppState.productionSubtab === 'banking' ? '' : 'none';
+        }
+        if (AppState.productionSubtab === 'investments') {
+            scheduleBaselineLayoutSync();
         }
     }
 
@@ -1307,16 +1969,21 @@ async function renderCurrentTab() {
             if (hcSubtabs) hcSubtabs.style.display = 'none';
 
             // Ensure production subtabs are visible
-            const pSub = document.getElementById('production-subtabs');
-            if (pSub) pSub.style.display = 'flex';
+            const productionToolbar = document.getElementById('production-toolbar');
+            if (productionToolbar) productionToolbar.style.display = 'flex';
 
             const invC = document.getElementById('production-investments-subtab');
+        const toolbarCaption = document.querySelector('.production-toolbar-caption');
+        if (toolbarCaption) {
+            toolbarCaption.classList.toggle('baseline-note--active', AppState.productionSubtab === 'investments');
+        }
             const bankC = document.getElementById('production-banking-subtab');
             if (AppState.productionSubtab === 'investments') {
                 if (invC) invC.style.display = '';
                 if (bankC) bankC.style.display = 'none';
                 renderProductionTab(data, { containerId: 'production-investments-subtab', mode: 'investments' });
                 setTimeout(validateAllProductMix, 100);
+                scheduleBaselineLayoutSync();
             } else {
                 if (invC) invC.style.display = 'none';
                 if (bankC) bankC.style.display = '';
@@ -1424,60 +2091,99 @@ async function handleHeadcountChange(input) {
 
 // Handle production changes
 async function handleProductionChange(input) {
+    if (!input) return;
+
     const month = input.dataset.month;
     const team = input.dataset.team;
     const metric = input.dataset.metric;
     const product = input.dataset.product;
     const rawIn = (input.value || '').trim();
+
+    if (!month || !team || !metric) {
+        return;
+    }
+
     if (rawIn === '' || rawIn === '-') {
         input.classList.add('invalid-input');
         return;
     }
     input.classList.remove('invalid-input');
-    let value = parseFloat(rawIn.replace(/,/g, '')) || 0;
-    
+
     const teamKey = `Team ${team}`;
-    
-    // Save previous value for undo
+    const teamData = AppState.teamData[AppState.currentForecast]?.[teamKey];
+    if (!teamData) {
+        return;
+    }
+
+    let value;
+
+    if (metric === 'productivity') {
+        value = Number(rawIn);
+        if (!Number.isFinite(value)) {
+            value = toNumber(teamData.productivity[month], 0);
+        }
+        value = Number(value.toFixed(2));
+        input.value = value.toFixed(2);
+    } else if (metric === 'mix') {
+        value = Number(rawIn);
+        if (!Number.isFinite(value)) {
+            value = toNumber(teamData.productMix[product][month], 0) * 100;
+        }
+        value = clamp(value, 0, 100);
+        input.value = value.toFixed(1);
+    } else if (metric === 'abpa') {
+        value = Number(rawIn);
+        if (!Number.isFinite(value)) {
+            value = toNumber(teamData.abpa[product][month], 0) / 1000;
+        }
+        value = Math.max(0, Math.round(value));
+        input.value = String(value);
+        value = value * 1000;
+    } else {
+        value = Number(rawIn);
+        if (!Number.isFinite(value)) {
+            value = 0;
+        }
+    }
+
     let previousValue;
     if (metric === 'productivity') {
-        previousValue = AppState.teamData[AppState.currentForecast][teamKey].productivity[month];
+        previousValue = toNumber(teamData.productivity[month], 0);
     } else if (metric === 'mix') {
-        previousValue = AppState.teamData[AppState.currentForecast][teamKey].productMix[product][month] * 100;
+        previousValue = toNumber(teamData.productMix[product][month], 0) * 100;
     } else if (metric === 'abpa') {
-        previousValue = AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month];
+        previousValue = toNumber(teamData.abpa[product][month], 0);
+    } else {
+        previousValue = null;
     }
-    
-    // Save for undo
+
     if (!AppState.isBulkPasting) {
         AppState.undoStack.push({
             type: 'productionChange',
-            data: { 
-                team, 
-                month, 
-                metric, 
-                product, 
-                previousValue, 
-                newValue: value 
+            data: {
+                team,
+                month,
+                metric,
+                product,
+                previousValue,
+                newValue: value
             },
             context: { tab: 'production', subtab: 'investments' }
         });
         AppState.redoStack = [];
         updateUndoRedoButtons();
     }
-    
-    // Update local data
+
     if (metric === 'productivity') {
-        AppState.teamData[AppState.currentForecast][teamKey].productivity[month] = value.toFixed(2);
+        teamData.productivity[month] = value.toFixed(2);
     } else if (metric === 'mix') {
-        AppState.teamData[AppState.currentForecast][teamKey].productMix[product][month] = value / 100;
+        teamData.productMix[product][month] = value / 100;
     } else if (metric === 'abpa') {
-        AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month] = value;
+        teamData.abpa[product][month] = value;
     }
-    
+
     updateProductionCalculations(team, month);
-    
-    // Determine database field name
+
     let fieldName;
     let dbValue = value;
     if (metric === 'productivity') {
@@ -1485,24 +2191,23 @@ async function handleProductionChange(input) {
     } else if (metric === 'mix') {
         const productLetter = product.split(' ')[1].toLowerCase();
         fieldName = `product_${productLetter}_mix`;
-        dbValue = value / 100; // Store as decimal in database
+        dbValue = value / 100;
     } else if (metric === 'abpa') {
         const productLetter = product.split(' ')[1].toLowerCase();
         fieldName = `product_${productLetter}_abpa`;
     }
-    
-    // Update database (skip when bulk pasting; handled by bulkUpdate)
-    if (!AppState.isBulkPasting) {
+
+    if (!AppState.isBulkPasting && fieldName) {
         try {
             await API.forecasts.updateData({
-                teamId: parseInt(team),
+                teamId: parseInt(team, 10),
                 periodDate: getPeriodDate(month),
                 versionId: AppState.currentVersion.version_id,
                 field: fieldName,
                 value: dbValue,
                 updatedBy: AppState.currentUser
             });
-            
+
             showSaveIndicator();
         } catch (error) {
             console.error('Failed to save change:', error);
@@ -1511,36 +2216,61 @@ async function handleProductionChange(input) {
     }
 }
 
-// Handle additional product changes
 async function handleAdditionalProductChange(input) {
+    if (!input) return;
+
     const month = input.dataset.month;
     const product = input.dataset.product;
     const metric = input.dataset.metric;
     const team = input.dataset.team;
     const rawIn = (input.value || '').trim();
+
+    if (!month || !team || !product || !metric) {
+        return;
+    }
+
     if (rawIn === '' || rawIn === '-') {
         input.classList.add('invalid-input');
         return;
     }
     input.classList.remove('invalid-input');
-    let value = parseFloat(rawIn.replace(/,/g, '')) || 0;
-    
+
     const teamKey = `Team ${team}`;
-    
-    // Save for undo
-    let previousValue;
-    if (metric === 'additional-productivity') {
-        previousValue = AppState.teamData[AppState.currentForecast][teamKey]
-            .additionalProducts[product].productivity[month];
-        AppState.teamData[AppState.currentForecast][teamKey]
-            .additionalProducts[product].productivity[month] = value.toFixed(2);
-    } else if (metric === 'additional-abpa') {
-        previousValue = AppState.teamData[AppState.currentForecast][teamKey]
-            .additionalProducts[product].abpa[month];
-        AppState.teamData[AppState.currentForecast][teamKey]
-            .additionalProducts[product].abpa[month] = value;
+    const teamData = AppState.teamData[AppState.currentForecast]?.[teamKey];
+    if (!teamData || !teamData.additionalProducts || !teamData.additionalProducts[product]) {
+        return;
     }
-    
+
+    const productData = teamData.additionalProducts[product];
+    let value;
+    let previousValue = null;
+
+    if (metric === 'additional-productivity') {
+        previousValue = toNumber(productData.productivity[month], 0);
+        value = Number(rawIn);
+        if (!Number.isFinite(value)) {
+            value = previousValue;
+        }
+        value = Number(value.toFixed(2));
+        input.value = value.toFixed(2);
+        productData.productivity[month] = value.toFixed(2);
+    } else if (metric === 'additional-abpa') {
+        previousValue = toNumber(productData.abpa[month], 0);
+        value = Number(rawIn);
+        if (!Number.isFinite(value)) {
+            value = previousValue / 1000;
+        }
+        value = Math.max(0, Math.round(value));
+        input.value = String(value);
+        value = value * 1000;
+        productData.abpa[month] = value;
+    } else {
+        value = Number(rawIn);
+        if (!Number.isFinite(value)) {
+            value = 0;
+        }
+    }
+
     if (!AppState.isBulkPasting) {
         AppState.undoStack.push({
             type: 'additionalProductChange',
@@ -1550,27 +2280,28 @@ async function handleAdditionalProductChange(input) {
         AppState.redoStack = [];
         updateUndoRedoButtons();
     }
-    
-    // Update calculations
+
     updateAdditionalProductCalculations(team, month, product);
-    
-    // Determine database field
-    const fieldName = metric === 'additional-productivity' 
-        ? `product_${product.toLowerCase()}_productivity`
-        : `product_${product.toLowerCase()}_abpa`;
-    
-    // Update database (skip when bulk pasting; handled by bulkUpdate)
-    if (!AppState.isBulkPasting) {
+
+    let fieldName;
+    let dbValue = value;
+    if (metric === 'additional-productivity') {
+        fieldName = `product_${product.toLowerCase()}_productivity`;
+    } else if (metric === 'additional-abpa') {
+        fieldName = `product_${product.toLowerCase()}_abpa`;
+    }
+
+    if (!AppState.isBulkPasting && fieldName) {
         try {
             await API.forecasts.updateData({
-                teamId: parseInt(team),
+                teamId: parseInt(team, 10),
                 periodDate: getPeriodDate(month),
                 versionId: AppState.currentVersion.version_id,
                 field: fieldName,
-                value: value,
+                value: dbValue,
                 updatedBy: AppState.currentUser
             });
-            
+
             showSaveIndicator();
         } catch (error) {
             console.error('Failed to save change:', error);
@@ -1579,7 +2310,6 @@ async function handleAdditionalProductChange(input) {
     }
 }
 
-// Recompute Additional Product derived cells for a given month/product
 function updateAdditionalProductCalculations(team, month, product) {
     const teamKey = `Team ${team}`;
     const data = AppState.teamData[AppState.currentForecast][teamKey];
@@ -1595,6 +2325,15 @@ function updateAdditionalProductCalculations(team, month, product) {
     // Current inputs
     const weeklyProd = parseFloat(data.additionalProducts?.[product]?.productivity?.[month] || 0);
     const abpa = parseFloat(data.additionalProducts?.[product]?.abpa?.[month] || 0);
+    const abpaCell = document.getElementById(`additional-abpa-${product}-${month}`);
+    if (abpaCell) {
+        const inputEl = abpaCell.querySelector('input');
+        if (inputEl) {
+            inputEl.value = String(Math.round(abpa / 1000));
+        } else {
+            abpaCell.innerHTML = `${formatThousands(abpa, 0)}<span class="table-value-suffix">K</span>`;
+        }
+    }
 
     // Calculations mirror render-tables.js
     const accounts = Math.round((headcount * weeklyProd * businessDays) / 5);
@@ -1689,7 +2428,7 @@ function undo() {
             AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month] = previousValue;
             // Update the input directly
             const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="abpa"][data-team="${team}"]`);
-            if (input) input.value = formatNumber(previousValue);
+            if (input) input.value = String(Math.round((previousValue || 0) / 1000));
         }
         
         updateProductionCalculations(team, month);
@@ -1708,7 +2447,7 @@ function undo() {
                 .additionalProducts[product].abpa[month] = parseInt(previousValue);
             // Update the input directly
             const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${team}"]`);
-            if (input) input.value = formatNumber(previousValue);
+            if (input) input.value = String(Math.round((previousValue || 0) / 1000));
         }
         
         updateAdditionalProductCalculations(team, month, product);
@@ -1727,7 +2466,7 @@ function undo() {
             } else if (state.metric === 'abpa') {
                 AppState.teamData[AppState.currentForecast][teamKey].abpa[state.product][state.month] = parseInt(state.previousValue);
                 const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="abpa"][data-team="${state.team}"]`);
-                if (input) input.value = formatNumber(state.previousValue);
+                if (input) input.value = String(Math.round((state.previousValue || 0) / 1000));
             } else if (state.metric === 'additional-productivity') {
                 AppState.teamData[AppState.currentForecast][teamKey]
                     .additionalProducts[state.product].productivity[state.month] = parseFloat(state.previousValue).toFixed(2);
@@ -1737,7 +2476,7 @@ function undo() {
                 AppState.teamData[AppState.currentForecast][teamKey]
                     .additionalProducts[state.product].abpa[state.month] = parseInt(state.previousValue);
                 const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="additional-abpa"][data-team="${state.team}"]`);
-                if (input) input.value = formatNumber(state.previousValue);
+                if (input) input.value = String(Math.round((state.previousValue || 0) / 1000));
             }
             
             updateProductionCalculations(state.team, state.month);
@@ -1774,7 +2513,7 @@ function undo() {
             } else if (metric === 'abpa') {
                 AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month] = parseFloat(previousValue) || 0;
                 const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="abpa"][data-team="${state.team}"]`);
-                if (input) input.value = formatNumber(previousValue || 0);
+                if (input) input.value = String(Math.round((previousValue || 0) / 1000));
                 updateProductionCalculations(state.team, month);
             } else if (metric === 'additional-productivity') {
                 AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].productivity[month] = parseFloat(previousValue).toFixed(2);
@@ -1784,7 +2523,7 @@ function undo() {
             } else if (metric === 'additional-abpa') {
                 AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].abpa[month] = parseFloat(previousValue) || 0;
                 const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${state.team}"]`);
-                if (input) input.value = formatNumber(previousValue || 0);
+                if (input) input.value = String(Math.round((previousValue || 0) / 1000));
                 updateAdditionalProductCalculations(state.team, month, product);
             }
         });
@@ -2077,7 +2816,7 @@ function redo() {
       } else if (metric === 'abpa') {
         AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month] = parseFloat(val) || 0;
         const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="abpa"][data-team="${state.team}"]`);
-        if (input) input.value = formatNumber(val || 0);
+        if (input) input.value = String(Math.round((val || 0) / 1000));
         updateProductionCalculations(state.team, month);
       } else if (metric === 'additional-productivity') {
         AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].productivity[month] = parseFloat(val).toFixed(2);
@@ -2087,7 +2826,7 @@ function redo() {
       } else if (metric === 'additional-abpa') {
         AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].abpa[month] = parseFloat(val) || 0;
         const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${state.team}"]`);
-        if (input) input.value = formatNumber(val || 0);
+        if (input) input.value = String(Math.round((val || 0) / 1000));
         updateAdditionalProductCalculations(state.team, month, product);
       }
 
@@ -2281,7 +3020,7 @@ function applyValueChange() {
         );
         if (input) {
             if (metric === 'abpa' || metric === 'additional-abpa') {
-                input.value = state.newValue.toLocaleString();
+                input.value = String(Math.round((state.newValue || 0) / 1000));
             } else if (metric === 'productivity' || metric === 'additional-productivity') {
                 input.value = state.newValue.toFixed(2);
             } else {
@@ -2396,6 +3135,20 @@ function switchHeadcountSubtab(which) {
 }
 
 // Switch Production Investments/Banking mini-tab
+function updateProductionToolbarCaption(mode = AppState.productionSubtab) {
+    const caption = document.querySelector('.production-toolbar-caption');
+    if (!caption) return;
+    const note = 'Prefill forecast months using trailing averages, seasonality multipliers, and annual growth. Edits made in the table still apply month by month.';
+    const shouldShow = mode === 'investments' && !AppState.isGroupView;
+    if (shouldShow) {
+        caption.textContent = note;
+        caption.classList.add('baseline-note--active');
+    } else {
+        caption.textContent = '';
+        caption.classList.remove('baseline-note--active');
+    }
+}
+
 function switchProductionSubtab(which) {
     if (which !== 'investments' && which !== 'banking') return;
     // Save current before switching
@@ -2412,6 +3165,12 @@ function switchProductionSubtab(which) {
     }
     const invC = document.getElementById('production-investments-subtab');
     const bankC = document.getElementById('production-banking-subtab');
+
+    updateProductionToolbarCaption(which);
+
+    document.querySelectorAll('.baseline-subtab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.subtab === which);
+    });
     if (invC && bankC) {
         invC.style.display = which === 'investments' ? '' : 'none';
         bankC.style.display = which === 'banking' ? '' : 'none';
@@ -2502,3 +3261,8 @@ async function handleNonSalesHeadcountChange(input) {
         }
     }
 }
+
+
+
+
+

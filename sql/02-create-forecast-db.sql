@@ -261,7 +261,7 @@ CREATE TABLE `forecast_versions` (
 
 LOCK TABLES `forecast_versions` WRITE;
 /*!40000 ALTER TABLE `forecast_versions` DISABLE KEYS */;
-INSERT INTO `forecast_versions` VALUES (1,'Previous Forecast (2024 Plan)','2024-01-01','Mid-year forecast based on Q1-Q2 actuals','2025-06-11 02:38:39',NULL,1,0),(2,'Current Forecast (2024 Mid-Year Update)','2024-05-01','Original annual plan for 2024','2025-06-11 02:38:39',NULL,1,0);
+INSERT INTO `forecast_versions` VALUES (1,'Previous Forecast','2024-01-01','Mid-year forecast based on Q1-Q2 actuals','2025-06-11 02:38:39',NULL,1,0),(2,'Current Forecast','2024-05-01','Original annual plan for 2024','2025-06-11 02:38:39',NULL,1,0);
 /*!40000 ALTER TABLE `forecast_versions` ENABLE KEYS */;
 UNLOCK TABLES;
 

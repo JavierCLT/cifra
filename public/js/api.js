@@ -110,25 +110,46 @@ const API = {
             const params = new URLSearchParams();
             if (startDate) params.append('startDate', startDate);
             if (endDate) params.append('endDate', endDate);
-            
+
             const result = await API.request(
                 `/actuals/team/${teamId}?${params}`
             );
             return result.data;
         },
-        
+
         async getPeriods() {
             const result = await API.request('/actuals/periods');
             return result.data;
         },
-        
+
         async getCalendar(year) {
             const params = year ? `?year=${year}` : '';
             const result = await API.request(`/actuals/calendar${params}`);
             return result.data;
         }
     },
-    
+
+    productionConfig: {
+        async get(versionId) {
+            if (!versionId) {
+                throw new Error('versionId is required');
+            }
+            const params = new URLSearchParams({ versionId: String(versionId) });
+            const result = await API.request(`/production-config?${params.toString()}`);
+            return result.data;
+        },
+
+        async save(payload) {
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('payload is required to save production settings');
+            }
+            return await API.request('/production-config', {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+        }
+    },
+
     // Health check
     async checkHealth() {
         return await API.request('/health');

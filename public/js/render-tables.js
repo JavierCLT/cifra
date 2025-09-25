@@ -92,6 +92,18 @@ function formatNumber(num) {
     return num.toLocaleString();
 }
 
+function formatThousands(num, digits = 1) {
+    const value = Number(num);
+    if (!Number.isFinite(value)) {
+        return "0";
+    }
+    const thousands = value / 1000;
+    return thousands.toLocaleString(undefined, {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+    });
+}
+
 // Remove formatting for editing
 function removeFormatting(input) {
     input.value = input.value.replace(/,/g, '');
@@ -193,7 +205,7 @@ function renderHeadcountTab(data, opts = {}) {
     });
     
     // Total row
-    const totalLabel = mode === 'non-sales' ? 'Total Non-Sales Headcount' : 'Total Productive Headcount';
+    const totalLabel = mode === 'non-sales' ? 'Total Non-Sales Headcount' : 'Total Productive HC';
     const idPrefix = mode === 'non-sales' ? 'ns-' : '';
     html += `<tr class="total-row"><td>${totalLabel}</td>`;
     months.forEach(month => {
@@ -230,10 +242,109 @@ function renderHeadcountTab(data, opts = {}) {
 }
 
 // Render production tab
+function renderProductionBaselineColumn(data, months) {
+    if (AppState.isGroupView) return '';
+
+    const baselineState = getProductionBaselineState();
+    if (!baselineState) return '';
+
+    const period = baselineState.period || 12;
+    const averages = computeProductionBaselineAverages(data, months, period);
+
+    if (baselineState.productivity == null) {
+        baselineState.productivity = Number(toNumber(averages.productivity, 0).toFixed(2));
+    }
+
+    PRODUCTS.forEach(product => {
+        if (baselineState.mix[product] == null) {
+            baselineState.mix[product] = toNumber(averages.mix[product], 0);
+        }
+        if (baselineState.abpa[product] == null) {
+            baselineState.abpa[product] = Math.round(toNumber(averages.abpa[product], 0));
+        }
+    });
+
+    const allowEditing = !AppState.isGroupView && AppState.currentVersion && AppState.currentVersion.version_id === 2;
+    const slugifyValue = (value) => (typeof slugify === 'function' ? slugify(value) : String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-'));
+    const periodOptions = [6, 12, 18].map(option => `<option value="${option}" ${option === period ? 'selected' : ''}>${option} months</option>`).join('');
+
+    let html = '<div class="production-baseline-column">';
+    html += `
+        <div class="baseline-top">
+            <h3 class="baseline-title">Baseline Auto-Fill</h3>
+            <div class="baseline-period-control">
+                <label for="production-baseline-period">Trailing average window</label>
+                <select id="production-baseline-period" class="production-baseline-period" ${allowEditing ? '' : 'disabled'}>${periodOptions}</select>
+            </div>
+        </div>
+        <div class="baseline-columns">
+            <div class="baseline-column-labels">
+                <span class="baseline-column-label baseline-column-label--avg">
+                    <span class="baseline-avg-label">AVG</span>
+                    <span class="baseline-avg-value">${period} mo</span>
+                </span>
+                <span class="baseline-column-label baseline-column-label--baseline">Baseline</span>
+            </div>
+            <div class="baseline-grid">
+                
+                <div class="baseline-row--metric" data-baseline-metric="productivity">
+                    <div class="baseline-cell--avg">${toNumber(averages.productivity, 0).toFixed(2)}</div>
+                    <div class="baseline-cell--input">
+                        <input type="number" step="0.01" class="baseline-input" data-baseline-metric="productivity" value="${(baselineState.productivity ?? 0).toFixed(2)}" ${allowEditing ? '' : 'disabled'}>
+                    </div>
+                </div>
+                <div class="baseline-row--spacer baseline-spacer--totals"></div>
+                <div class="baseline-row--spacer baseline-spacer--balances"></div>
+                <div class="baseline-row--divider baseline-divider--mix"></div>
+                <div class="baseline-column-labels baseline-column-labels--section">
+                    <span class="baseline-column-label baseline-column-label--avg baseline-section-avg-label">AVG ${period} MO</span>
+                    <span class="baseline-column-label baseline-column-label--baseline">Baseline</span>
+                </div>
+                ${PRODUCTS.map(product => {
+                    const slug = slugifyValue(product);
+                    const avgPercent = (toNumber(averages.mix[product], 0) * 100).toFixed(1);
+                    const baselinePercent = (toNumber(baselineState.mix[product], 0) * 100).toFixed(1);
+                    return `
+                    <div class="baseline-row--metric" data-baseline-metric="mix" data-baseline-product="${slug}">
+                        <div class="baseline-cell--avg">${avgPercent}%</div>
+                        <div class="baseline-cell--input">
+                            <input type="number" step="0.1" min="0" max="100" class="baseline-input" data-baseline-metric="mix" data-baseline-product="${product}" value="${baselinePercent}" ${allowEditing ? '' : 'disabled'}>
+                            <span class="baseline-suffix">%</span>
+                        </div>
+                    </div>`;
+                }).join('')}
+                <div class="baseline-row--divider baseline-divider--abpa"></div>
+                <div class="baseline-column-labels baseline-column-labels--section">
+                    <span class="baseline-column-label baseline-column-label--avg baseline-section-avg-label">AVG ${period} MO</span>
+                    <span class="baseline-column-label baseline-column-label--baseline">Baseline</span>
+                </div>
+                ${PRODUCTS.map(product => {
+                    const slug = slugifyValue(product);
+                    const avgValue = formatThousands(toNumber(averages.abpa[product], 0), 0);
+                    const baselineValue = Math.round(toNumber(baselineState.abpa[product], 0) / 1000);
+                    return `
+                    <div class="baseline-row--metric" data-baseline-metric="abpa" data-baseline-product="${slug}">
+                        <div class="baseline-cell--avg">${avgValue}K</div>
+                        <div class="baseline-cell--input">
+                            <input type="number" step="1" min="0" class="baseline-input" data-baseline-metric="abpa" data-baseline-product="${product}" value="${baselineValue}" ${allowEditing ? '' : 'disabled'}>
+                            <span class="baseline-suffix">K</span>
+                        </div>
+                    </div>`;
+                }).join('')}
+                <div class="baseline-row--spacer baseline-spacer--tail"></div>
+            </div>
+        </div>
+    `;
+
+    html += '</div>';
+    return html;
+}
+
 function renderProductionTab(data, opts = {}) {
     const container = document.getElementById(opts.containerId || 'production-tab');
     const mode = opts.mode || 'all'; // 'investments' | 'banking' | 'all'
     const months = generateMonthList();
+    const slugifyProductName = (value) => (typeof slugify === 'function' ? slugify(value) : String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-'));
     const totalDashCells = QUARTERS.length + YEARS.length;
 
     let html = '<div class="production-layout">';
@@ -244,6 +355,10 @@ function renderProductionTab(data, opts = {}) {
         if (baselineColumn) {
             html += baselineColumn;
         }
+    }
+
+    if (typeof updateProductionToolbarCaption === 'function') {
+        updateProductionToolbarCaption(mode);
     }
 
     html += '<div class="production-table-container"><div class="data-table-wrapper"><table class="data-table production-table">';
@@ -265,7 +380,7 @@ function renderProductionTab(data, opts = {}) {
     YEARS.forEach(() => { html += '<th class="year-total-col">Total</th>'; });
     html += '</tr></thead><tbody>';
 
-    html += '<tr class="subtotal-row"><td>Total Productive Headcount</td>';
+    html += '<tr class="subtotal-row" data-baseline-anchor="headcount"><td>Total Productive HC</td>';
     months.forEach(month => {
         const total = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
         html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'}" id="prod-total-${month}">${total}</td>`;
@@ -298,7 +413,7 @@ function renderProductionTab(data, opts = {}) {
     
     // Productivity - investments only
     if (mode === 'investments' || mode === 'all') {
-    html += '<tr><td>Productivity (accounts/headcount/week)</td>';
+    html += '<tr data-baseline-anchor="productivity"><td>Productivity</td>';
     months.forEach(month => {
         const isForecast = data.forecastStatus[month] === 'Forecast';
         // Ensure value always has 2 decimals
@@ -334,7 +449,7 @@ function renderProductionTab(data, opts = {}) {
     // Total Accounts Sold - investments only
     let accountsData = {};
     if (mode === 'investments' || mode === 'all') {
-    html += '<tr class="subtotal-row"><td>Total Accounts Sold</td>';
+    html += '<tr class="subtotal-row" data-baseline-anchor="total-accounts"><td>Total Accounts</td>';
     accountsData = {};
     months.forEach((month, idx) => {
         const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
@@ -360,7 +475,7 @@ function renderProductionTab(data, opts = {}) {
     }
     
     // Total Balances in millions
-    html += '<tr class="total-row"><td>Total Balances ($M)</td>';
+    html += '<tr class="total-row" data-baseline-anchor="total-balances"><td>Total Balances ($M)</td>';
     const grandTotalData = {};
     months.forEach((month, idx) => {
         let grandTotal = 0;
@@ -397,11 +512,12 @@ function renderProductionTab(data, opts = {}) {
     
     // Product Mix Section - investments only
     if (mode === 'investments' || mode === 'all') {
-    html += '<tr><td colspan="52" class="section-header">Product Mix (%)</td></tr>';
+    html += '<tr data-baseline-anchor="mix-header"><td colspan="52" class="section-header">Product Mix (%)</td></tr>';
 
     PRODUCTS.forEach((product, productIndex) => {
+        const productSlug = slugifyProductName(product);
         const isLastProduct = productIndex === PRODUCTS.length - 1;
-        html += `<tr><td>${product} Mix (%)</td>`;
+        html += `<tr data-baseline-anchor="mix" data-product="${productSlug}"><td>${product} Mix (%)</td>`;
         months.forEach(month => {
             const isForecast = data.forecastStatus[month] === 'Forecast';
             const value = Math.round(data.productMix[product][month] * 100);
@@ -409,17 +525,18 @@ function renderProductionTab(data, opts = {}) {
             
             if (isForecast && !AppState.isGroupView && isCurrentForecast) {
                 html += `<td class="forecast-col">
-                    <input type="number" 
-                           value="${value}" 
-                           data-month="${month}" 
-                           data-product="${product}"
-                           data-metric="mix"
-                           data-team="${AppState.currentTeam}"
-                           class="selectable-input"
-                           onchange="handleProductionChange(this)"
-                           onblur="validateProductMix('${month}')"
-                           style="width: calc(100% - 20px); display: inline-block;">
-                    <span style="margin-left: 2px;">%</span>
+                    <div class="table-input-with-suffix">
+                        <input type="number" 
+                               value="${value}" 
+                               data-month="${month}" 
+                               data-product="${product}"
+                               data-metric="mix"
+                               data-team="${AppState.currentTeam}"
+                               class="selectable-input"
+                               onchange="handleProductionChange(this)"
+                               onblur="validateProductMix('${month}')">
+                        <span class="table-input-suffix">%</span>
+                    </div>
                     ${isLastProduct ? `<span id="mix-error-${month}" style="display: none;"></span>` : ''}
                 </td>`;
             } else {
@@ -468,7 +585,8 @@ function renderProductionTab(data, opts = {}) {
         html += '</tr>';
     });
     
-    // Accounts by Product Section - investments only
+    
+// Accounts by Product Section - investments only
     html += '<tr><td colspan="52" class="section-header">Accounts by Product</td></tr>';
     
     const productAccountsData = {};
@@ -499,30 +617,36 @@ function renderProductionTab(data, opts = {}) {
     });
     
     // Average Balance per Account Section - investments only
-    html += '<tr><td colspan="52" class="section-header">Average Balance per Account ($)</td></tr>';
+    html += '<tr data-baseline-anchor="abpa-header"><td colspan="52" class="section-header">Average Balance per Account ($K)</td></tr>';
 
     PRODUCTS.forEach(product => {
-        html += `<tr><td>ABPA ${product}</td>`;
+        const productSlug = slugifyProductName(product);
+        html += `<tr data-baseline-anchor="abpa" data-product="${productSlug}"><td>ABPA ${product} ($K)</td>`;
         months.forEach(month => {
             const isForecast = data.forecastStatus[month] === 'Forecast';
             const value = data.abpa[product][month] || 0;
+            const displayValue = formatThousands(value, 0);
+            const editableValue = Math.round(value / 1000);
             const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
             
             if (isForecast && !AppState.isGroupView && isCurrentForecast) {
-                html += `<td class="forecast-col">
-                    <input type="text" 
-                           value="${formatNumber(value)}" 
-                           data-month="${month}" 
-                           data-product="${product}"
-                           data-metric="abpa"
-                           data-team="${AppState.currentTeam}"
-                           class="selectable-input"
-                           onchange="handleProductionChange(this)"
-                           onfocus="removeFormatting(this)"
-                           onblur="addFormatting(this)">
+                html += `<td id="abpa-${productSlug}-${month}" class="forecast-col">
+                    <div class="table-input-with-suffix">
+                        <input type="number"
+                               step="1"
+                               min="0"
+                               value="${editableValue}"
+                               data-month="${month}"
+                               data-product="${product}"
+                               data-metric="abpa"
+                               data-team="${AppState.currentTeam}"
+                               class="selectable-input"
+                               onchange="handleProductionChange(this)">
+                        <span class="table-input-suffix">K</span>
+                    </div>
                 </td>`;
             } else {
-                html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${formatNumber(value)}</td>`;
+                html += `<td id="abpa-${productSlug}-${month}" class="${isForecast ? 'forecast-col' : 'actual-col'}">${displayValue}<span class="table-value-suffix">K</span></td>`;
             }
         });
         
@@ -541,9 +665,8 @@ function renderProductionTab(data, opts = {}) {
                 }
             });
             
-            const avgABPA = totalAccounts > 0 ? 
-                Math.round(totalBalance / totalAccounts) : 0;
-            html += `<td class="quarter-col">${formatNumber(avgABPA)}</td>`;
+            const avgABPA = totalAccounts > 0 ? Math.round(totalBalance / totalAccounts) : 0;
+            html += `<td class="quarter-col">${formatThousands(avgABPA, 0)}K</td>`;
         });
         
         // Year average ABPA - using YEARS array
@@ -561,9 +684,8 @@ function renderProductionTab(data, opts = {}) {
                 }
             });
             
-            const avgABPA = totalAccounts > 0 ? 
-                Math.round(totalBalance / totalAccounts) : 0;
-            html += `<td class="year-total-col">${formatNumber(avgABPA)}</td>`;
+            const avgABPA = totalAccounts > 0 ? Math.round(totalBalance / totalAccounts) : 0;
+            html += `<td class="year-total-col">${formatThousands(avgABPA, 0)}K</td>`;
         });
         
         html += '</tr>';
@@ -647,27 +769,32 @@ function renderProductionTab(data, opts = {}) {
         html += '</tr>';
         
         // ABPA row
-        html += `<tr><td>${productName} ABPA</td>`;
+        html += `<tr><td>${productName} ABPA ($K)</td>`;
         months.forEach(month => {
             const isForecast = data.forecastStatus[month] === 'Forecast';
             const value = data.additionalProducts?.[product]?.abpa?.[month] || 0;
+            const displayValue = formatThousands(value, 0);
+            const editableValue = Math.round(value / 1000);
             const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
             
             if (isForecast && !AppState.isGroupView && isCurrentForecast) {
-                html += `<td class="forecast-col">
-                    <input type="text" 
-                           value="${formatNumber(value)}" 
-                           data-month="${month}" 
-                           data-product="${product}"
-                           data-metric="additional-abpa"
-                           data-team="${AppState.currentTeam}"
-                           class="selectable-input"
-                           onchange="handleAdditionalProductChange(this)"
-                           onfocus="removeFormatting(this)"
-                           onblur="addFormatting(this)">
+                html += `<td id="additional-abpa-${product}-${month}" class="forecast-col">
+                    <div class="table-input-with-suffix">
+                        <input type="number" 
+                               step="1"
+                               min="0"
+                               value="${editableValue}" 
+                               data-month="${month}" 
+                               data-product="${product}"
+                               data-metric="additional-abpa"
+                               data-team="${AppState.currentTeam}"
+                               class="selectable-input"
+                               onchange="handleAdditionalProductChange(this)">
+                        <span class="table-input-suffix">K</span>
+                    </div>
                 </td>`;
             } else {
-                html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${formatNumber(value)}</td>`;
+                html += `<td id="additional-abpa-${product}-${month}" class="${isForecast ? 'forecast-col' : 'actual-col'}">${displayValue}<span class="table-value-suffix">K</span></td>`;
             }
         });
         
@@ -748,7 +875,7 @@ function renderProductionTab(data, opts = {}) {
     html += '</tbody></table></div></div>';
 
     if (mode === 'investments' && !AppState.isGroupView && baselineColumn) {
-        html += '<div class="production-actions"><button type="button" class="production-admin-btn">Production Admin Panel</button></div>';
+        html += '<div class="production-actions"></div>';
     }
 
     html += '</div>';

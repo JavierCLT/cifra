@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Configuration</title>
+    <link rel="stylesheet" href="css/styles.css">
+        <style>
+        body {
+            background: #f3f6fb;
+            font-family: Arial, sans-serif;
+            margin: 0;
+        }
+
+        .admin-header {
+            background: var(--boa-dark-blue);
+            color: white;
+            padding: 10px 28px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 24px;
+        }
+
+        .admin-header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .header-status {
+            min-width: 140px;
+            min-height: 32px;
+            padding: 6px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            background: rgba(27, 127, 74, 0.18);
+            color: #1b7f4a;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .header-status.is-visible {
+            opacity: 1;
+        }
+
+        .header-status.is-error {
+            background: rgba(192, 57, 43, 0.18);
+            color: #c0392b;
+        }
+
+        .admin-container {
+            max-width: 1280px;
+            margin: 16px auto 32px auto;
+            padding: 3px 20px 0px 20px;
+        }
+
+        .admin-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
+            gap: 28px;
+            align-items: start;
+        }
+
+        @media (max-width: 1440px) {
+            .admin-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .admin-section {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 18px rgba(15, 35, 95, 0.08);
+        }
+
+        .admin-section h2 {
+            margin-top: 0;
+            margin-bottom: 18px;
+            color: var(--boa-dark-blue);
+            font-size: 20px;
+        }
+
+        .seasonality-group + .seasonality-group {
+            margin-top: 28px;
+        }
+
+        .seasonality-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+
+        .seasonality-table th,
+        .seasonality-table td {
+            border: 1px solid #d0d7e2;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .seasonality-table th {
+            background: var(--boa-blue);
+            color: white;
+            font-weight: 600;
+        }
+
+        .seasonality-table input {
+            width: 60px;
+            padding: 6px;
+            text-align: right;
+            border: 1px solid #99aac6;
+            border-radius: 4px;
+        }
+
+        .seasonality-table-wrapper {
+            overflow-x: auto;
+        }
+
+        .growth-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+
+        .growth-card {
+            background: #f1f5fb;
+            border-radius: 10px;
+            padding: 18px;
+            border: 1px solid #d0d7e2;
+        }
+
+        .growth-card label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--boa-dark-blue);
+        }
+
+        .growth-card input {
+            width: 100%;
+            padding: 9px;
+            border-radius: 6px;
+            border: 1px solid #99aac6;
+            text-align: right;
+            font-size: 15px;
+        }
+
+        /* ===== Production Admin page overrides ===== */
+        body.production-admin-page {
+        /* Cancel the app shell’s flex layout and hidden overflow */
+        display: block !important;
+        overflow: auto !important;
+        height: auto !important;
+        min-height: 100vh;
+        background: #f3f6fb; /* keep your existing background */
+        }
+
+        /* Keep the header at the very top and always visible */
+        body.production-admin-page .admin-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        }
+
+        /* --- Compact tweaks so everything fits nicely in the modal --- */
+        body.production-admin-page .admin-container {
+        max-width: 1180px;
+        margin: 16px auto 16px;
+        
+        }
+
+        body.production-admin-page .admin-layout { gap: 16px; }
+        body.production-admin-page .admin-section { padding: 16px; }
+        body.production-admin-page .admin-section h2 { font-size: 18px; margin-bottom: 12px; }
+
+        body.production-admin-page .seasonality-table { table-layout: fixed; }
+        body.production-admin-page .seasonality-table th,
+        body.production-admin-page .seasonality-table td {
+        padding: 6px;
+        font-size: 12px;
+        }
+        body.production-admin-page .seasonality-table th:first-child,
+        body.production-admin-page .seasonality-table td:first-child {
+        width: 120px;
+        }
+        body.production-admin-page .seasonality-table th:not(:first-child),
+        body.production-admin-page .seasonality-table td:not(:first-child) {
+        width: calc((100% - 120px) / 12); /* make all months fit */
+        }
+        body.production-admin-page .seasonality-table input {
+        width: 100%;
+        min-width: 0;
+        padding: 4px 6px;
+        font-size: 12px;
+        text-align: right;
+        }
+
+        body.production-admin-page .growth-grid {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+        }
+        body.production-admin-page .growth-card { padding: 12px; }
+        body.production-admin-page .growth-card label { margin-bottom: 6px; }
+        body.production-admin-page .growth-card input { padding: 6px 8px; font-size: 14px; }
+
+        /* Status pill sizing so it looks good in the header */
+        body.production-admin-page .header-status {
+        min-width: 120px;
+        min-height: 28px;
+        font-size: 13px;
+        }
+    </style>
+</head>
+<body class="production-admin-page">
+    <header class="admin-header">
+        <h1>Production Configuration</h1>
+        <div class="header-status" id="headerStatus" aria-live="polite"></div>
+    </header>
+
+        <main class="admin-container">
+        <div class="admin-layout">
+            <section class="admin-section seasonality-section">
+                <h2>Seasonality Multipliers (Displayed as %)</h2>
+                <p style="margin-top:0; color:#5f6d88;">Adjust the monthly multipliers that will be applied to the auto-filled values on the Production tab. 100% keeps the baseline unchanged.</p>
+                <div class="seasonality-group">
+                    <h3 style="margin-bottom:8px; color:var(--boa-dark-blue);">Productivity Seasonality</h3>
+                    <div id="productivitySeasonality" class="seasonality-table-wrapper"></div>
+                </div>
+                <div class="seasonality-group" style="margin-top:24px;">
+                    <h3 style="margin-bottom:8px; color:var(--boa-dark-blue);">ABPA Seasonality</h3>
+                    <div id="abpaSeasonality" class="seasonality-table-wrapper"></div>
+                </div>
+            </section>
+
+            <section class="admin-section growth-section">
+                
+                <div class="growth-grid">
+                    <div class="growth-card">
+                        <label for="productivityGrowthInput">Productivity Annual Growth (%)</label>
+                        <input type="number" step="0.01" id="productivityGrowthInput" placeholder="0.00">
+                        <small style="color:#5f6d88;">Applied at the start of each new forecast year.</small>
+                    </div>
+                    <div class="growth-card">
+                        <label for="abpaGrowthInput">ABPA Annual Growth (%)</label>
+                        <input type="number" step="0.01" id="abpaGrowthInput" placeholder="0.00">
+                        <small style="color:#5f6d88;">Applied to each product's ABPA baseline every year.</small>
+                    </div>
+                    <div class="growth-card">
+                        <label for="mgiaGrowthInput">Product 3 Mix Annual Growth (%)</label>
+                        <input type="number" step="0.01" id="mgiaGrowthInput" placeholder="0.00">
+                        <small style="color:#5f6d88;">Growth applied to Product 3 mix. Product 1 offsets to keep totals at 100%.</small>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+
+
+    <script>
+        const MONTH_KEYS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        let versions = [];
+        let currentVersionId = null;
+        let saveTimer = null;
+        let isSaving = false;
+        const productionConfigChannel = (typeof BroadcastChannel !== 'undefined') ? new BroadcastChannel('productionConfig') : null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            buildSeasonalityTables();
+            bindEvents();
+            initializePanel();
+        });
+
+        function buildSeasonalityTables() {
+            renderSeasonalityTable('productivitySeasonality', 'productivity');
+            renderSeasonalityTable('abpaSeasonality', 'abpa');
+        }
+
+        function renderSeasonalityTable(containerId, metric) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+            const table = document.createElement('table');
+            table.className = 'seasonality-table';
+
+            const thead = document.createElement('thead');
+            const headerRow = document.createElement('tr');
+            headerRow.appendChild(createHeaderCell('Month'));
+            MONTH_KEYS.forEach(month => {
+                headerRow.appendChild(createHeaderCell(month));
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            const tbody = document.createElement('tbody');
+            const inputRow = document.createElement('tr');
+            const labelCell = document.createElement('td');
+            labelCell.textContent = 'Multiplier (%)';
+            labelCell.style.fontWeight = '600';
+            labelCell.style.background = '#f1f5fb';
+            inputRow.appendChild(labelCell);
+
+            MONTH_KEYS.forEach(month => {
+                const cell = document.createElement('td');
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.step = '0.1';
+                input.min = '0';
+                input.value = '100';
+                input.dataset.month = month;
+                input.dataset.metric = metric;
+                input.addEventListener('input', handleFieldChange);
+                input.addEventListener('blur', normalizeSeasonalityInput);
+                cell.appendChild(input);
+                inputRow.appendChild(cell);
+            });
+            tbody.appendChild(inputRow);
+            table.appendChild(tbody);
+            container.innerHTML = '';
+            container.appendChild(table);
+        }
+
+        function createHeaderCell(text) {
+            const th = document.createElement('th');
+            th.textContent = text;
+            return th;
+        }
+
+        function bindEvents() {
+            const productivityGrowth = document.getElementById('productivityGrowthInput');
+            const abpaGrowth = document.getElementById('abpaGrowthInput');
+            const mgiaGrowth = document.getElementById('mgiaGrowthInput');
+
+            if (productivityGrowth) productivityGrowth.addEventListener('input', handleFieldChange);
+            if (abpaGrowth) abpaGrowth.addEventListener('input', handleFieldChange);
+            if (mgiaGrowth) mgiaGrowth.addEventListener('input', handleFieldChange);
+        }
+
+        function initializePanel() {
+            const params = new URLSearchParams(window.location.search);
+            const requestedVersion = parseInt(params.get('versionId'), 10);
+            if (Number.isFinite(requestedVersion) && requestedVersion > 0) {
+                currentVersionId = requestedVersion;
+                loadSettings();
+                return;
+            }
+
+            fetch('/api/forecasts/versions')
+                .then(resp => resp.json())
+                .then(payload => {
+                    versions = (payload.data || []).filter(v => v.is_active);
+                    const preferred = versions.find(v => v.is_current) || versions[0];
+                    currentVersionId = preferred ? preferred.version_id : null;
+                    if (!currentVersionId) {
+                        showStatus('No active forecast version found.', true);
+                        return;
+                    }
+                    loadSettings();
+                })
+                .catch(err => {
+                    console.error('Failed to load versions', err);
+                    showStatus('Unable to load forecast version.', true);
+                });
+        }
+
+        function loadSettings() {
+            if (!currentVersionId) return;
+                        showStatus('', false);
+            fetch(`/api/production-config?versionId=${currentVersionId}`)
+                .then(resp => resp.json())
+                .then(payload => {
+                    if (!payload || !payload.success) {
+                        throw new Error(payload?.error || 'Unknown error');
+                    }
+                    applySettings(payload.data);
+                    showStatus('', false, 1200);
+                                    })
+                .catch(err => {
+                    console.error('Failed to load production settings', err);
+                    showStatus('Failed to load production settings.', true);
+                });
+        }
+
+        function applySettings(data) {
+            if (!data) return;
+            const productivityInputs = document.querySelectorAll('input[data-metric="productivity"]');
+            productivityInputs.forEach(input => {
+                const month = input.dataset.month;
+                const value = (data.seasonality?.productivity?.[month] ?? 1) * 100;
+                input.value = roundTo(value, 2);
+            });
+
+            const abpaInputs = document.querySelectorAll('input[data-metric="abpa"]');
+            abpaInputs.forEach(input => {
+                const month = input.dataset.month;
+                const value = (data.seasonality?.abpa?.[month] ?? 1) * 100;
+                input.value = roundTo(value, 2);
+            });
+
+            document.getElementById('productivityGrowthInput').value = roundTo((data.growth?.productivity || 0) * 100, 3);
+            document.getElementById('abpaGrowthInput').value = roundTo((data.growth?.abpa || 0) * 100, 3);
+            document.getElementById('mgiaGrowthInput').value = roundTo((data.growth?.mgiaMix || 0) * 100, 3);
+        }
+
+        function handleFieldChange() {
+            scheduleSave();
+        }
+
+        function normalizeSeasonalityInput(event) {
+            const input = event.target;
+            const value = parseFloat(input.value);
+            if (!Number.isFinite(value) || value <= 0) {
+                input.value = '100';
+            } else {
+                input.value = roundTo(value, 2);
+            }
+        }
+
+        function scheduleSave() {
+            if (saveTimer) {
+                clearTimeout(saveTimer);
+            }
+            saveTimer = setTimeout(saveSettings, 600);
+        }
+
+        function saveSettings() {
+            if (isSaving || !currentVersionId) return;
+            clearTimeout(saveTimer);
+            const payload = buildPayload();
+            payload.versionId = currentVersionId;
+            isSaving = true;
+            showStatus('Saving...', false, 1200);
+            fetch('/api/production-config', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(resp => {
+                    if (!resp.ok) {
+                        return resp.json().then(err => { throw new Error(err.error || 'Save failed'); });
+                    }
+                    return resp.json();
+                })
+                .then(() => {
+                    showStatus('Changes saved!', false, 2000);
+                    if (productionConfigChannel) {
+                        productionConfigChannel.postMessage({
+                            versionId: currentVersionId,
+                            timestamp: Date.now()
+                        });
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to save production settings', err);
+                    showStatus('Save failed. Please retry.', true, 3000);
+                })
+                .finally(() => {
+                    isSaving = false;
+                });
+        }
+
+        function buildPayload() {
+            const productivitySeasonality = {};
+            document.querySelectorAll('input[data-metric="productivity"]').forEach(input => {
+                const month = input.dataset.month;
+                const raw = parseFloat(input.value);
+                productivitySeasonality[month] = normalizeSeasonalityValue(raw);
+            });
+
+            const abpaSeasonality = {};
+            document.querySelectorAll('input[data-metric="abpa"]').forEach(input => {
+                const month = input.dataset.month;
+                const raw = parseFloat(input.value);
+                abpaSeasonality[month] = normalizeSeasonalityValue(raw);
+            });
+
+            const productivityGrowth = normalizeGrowth(parseFloat(document.getElementById('productivityGrowthInput').value));
+            const abpaGrowth = normalizeGrowth(parseFloat(document.getElementById('abpaGrowthInput').value));
+            const mgiaGrowth = normalizeGrowth(parseFloat(document.getElementById('mgiaGrowthInput').value));
+
+            return {
+                seasonalityProductivity: productivitySeasonality,
+                seasonalityAbpa: abpaSeasonality,
+                productivityGrowthRate: productivityGrowth,
+                abpaGrowthRate: abpaGrowth,
+                mgiaMixGrowthRate: mgiaGrowth,
+                updatedBy: 'admin@local'
+            };
+        }
+
+        function normalizeSeasonalityValue(percentValue) {
+            const value = Number.isFinite(percentValue) && percentValue > 0 ? percentValue : 100;
+            return value / 100;
+        }
+
+        function normalizeGrowth(percentValue) {
+            const value = Number.isFinite(percentValue) ? percentValue : 0;
+            return value / 100;
+        }
+
+        function roundTo(value, decimals) {
+            const factor = Math.pow(10, decimals);
+            return Math.round(value * factor) / factor;
+        }
+
+        function showStatus(message, isError, timeout) {
+            const pill = document.getElementById('headerStatus');
+            if (!pill) return;
+
+            pill.textContent = message || '';
+            pill.className = 'header-status';
+
+            if (message) {
+                pill.classList.add('is-visible');
+                if (isError) {
+                    pill.classList.add('is-error');
+                }
+            } else {
+                pill.classList.remove('is-visible', 'is-error');
+            }
+
+            if (window.__headerStatusTimer) {
+                clearTimeout(window.__headerStatusTimer);
+                window.__headerStatusTimer = null;
+            }
+
+            if (timeout) {
+                window.__headerStatusTimer = setTimeout(() => {
+                    pill.textContent = '';
+                    pill.className = 'header-status';
+                }, timeout);
+            }
+        }
+    </script>
+</body>
+</html>
+
+

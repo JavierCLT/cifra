@@ -1,3 +1,7 @@
+function slugifyProductId(name) {
+    return String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+}
+
 function updateHeadcountTotals(team, month) {
     const teamKey = `Team ${team}`;
     const data = AppState.teamData[AppState.currentForecast][teamKey];
@@ -67,9 +71,18 @@ function updateProductionCalculations(team, month) {
             accountsCell.textContent = formatNumber(productAccounts);
         }
         
-        // Get ABPA - FIX: Use AppState instead of undefined teamData
         const abpa = data.abpa[product][month] || 0;
-        
+        const productSlug = slugifyProductId(product);
+        const abpaCell = document.getElementById(`abpa-${productSlug}-${month}`);
+        if (abpaCell) {
+            const inputEl = abpaCell.querySelector('input');
+            if (inputEl) {
+                inputEl.value = String(Math.round(abpa / 1000));
+            } else {
+                abpaCell.innerHTML = `${formatThousands(abpa, 0)}<span class="table-value-suffix">K</span>`;
+            }
+        }
+
         // Calculate product balance
         const productBalance = productAccounts * abpa;
         
@@ -99,3 +112,16 @@ function updateProductionCalculations(team, month) {
 function formatNumber(num) {
     return num.toLocaleString();
 }
+
+function formatThousands(num, digits = 1) {
+    const value = Number(num);
+    if (!Number.isFinite(value)) {
+        return "0";
+    }
+    const thousands = value / 1000;
+    return thousands.toLocaleString(undefined, {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: digits
+    });
+}
+

@@ -74,10 +74,16 @@
             </div>
 
             <div id="production-tab" class="tab-content">
-                <!-- Mini-subtabs for Production -->
-                <div id="production-subtabs" class="subtabs" style="display:none;">
-                    <button id="prod-subtab-investments" class="subtab subtab-sales active" onclick="switchProductionSubtab('investments')">Investments</button>
-                    <button id="prod-subtab-banking" class="subtab subtab-non-sales" onclick="switchProductionSubtab('banking')">Banking</button>
+                <!-- Production toolbar -->
+                <div id="production-toolbar" class="production-toolbar" style="display:none;">
+                    <div class="production-toolbar-left">
+                        <div class="baseline-subtabs">
+                            <button id="prod-subtab-investments" class="baseline-subtab active" data-subtab="investments" onclick="switchProductionSubtab('investments')" type="button">Investments</button>
+                            <button id="prod-subtab-banking" class="baseline-subtab" data-subtab="banking" onclick="switchProductionSubtab('banking')" type="button">Banking</button>
+                        </div>
+                        <p class="production-toolbar-caption" id="productionToolbarCaption">Prefill forecast months using trailing averages, seasonality multipliers, and annual growth. Edits made in the table still apply month by month.</p>
+                    </div>
+                    <button type="button" class="production-admin-btn" id="production-admin-btn">Production Admin Panel</button>
                 </div>
                 <!-- Investments subtab content -->
                 <div id="production-investments-subtab" class="subtab-content active">
@@ -135,9 +141,22 @@
     <span>Average: <strong id="statsAverage">0</strong></span>
     </div>
 
+    <!-- Production Admin Modal -->
+    <div id="productionAdminModal" class="modal production-admin-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span>Production Configuration</span>
+                <button type="button" class="close-btn" onclick="closeProductionAdminModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <iframe id="productionAdminFrame" title="Production Configuration" src="about:blank"></iframe>
+            </div>
+        </div>
+    </div>
+
     <!-- External Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
+
     <!-- Application Scripts -->
     <script src="js/api.js"></script>
     <script src="js/ui-helpers.js"></script>

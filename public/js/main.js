@@ -726,7 +726,7 @@ function initializeSidebar() {
         groupHeader.className = 'group-header';
         groupHeader.innerHTML = `
             <span class="group-name">${groupData.displayName}</span>
-            <span class="arrow">â–¼</span>
+            <span class="arrow">&#9662;</span>
         `;
         
         groupHeader.onclick = (e) => {
@@ -1279,6 +1279,10 @@ function toggleGroup(header) {
     header.classList.toggle('collapsed');
     const groupItems = header.nextElementSibling;
     groupItems.classList.toggle('collapsed');
+    const arrow = header.querySelector('.arrow');
+    if (arrow) {
+        arrow.innerHTML = header.classList.contains('collapsed') ? '&#9656;' : '&#9662;';
+    }
 }
 
 // Render current tab
@@ -2690,6 +2694,8 @@ async function handleNonSalesHeadcountChange(input) {
         }
     }
 }
+
+
 
 
 

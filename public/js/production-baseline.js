@@ -281,6 +281,114 @@ function applyProductionBaselines({ data, months, teamId = AppState.currentTeam,
     }
 }
 
+
+function valuesApproximatelyEqual(a, b, tolerance = 0.0001) {
+    return Math.abs((Number(a) || 0) - (Number(b) || 0)) <= tolerance;
+}
+
+function createBaselineChangeSnapshot({ data, months, teamId = AppState.currentTeam } = {}) {
+    if (!data) return null;
+    const monthList = Array.isArray(months) && months.length
+        ? months
+        : (typeof generateMonthList === 'function' ? generateMonthList() : []);
+    const forecastMonths = monthList.filter(month => data.forecastStatus[month] === 'Forecast');
+    if (!forecastMonths.length) return null;
+
+    const team = String(teamId);
+    const records = [];
+
+    forecastMonths.forEach(month => {
+        const baseProd = Number(toNumber(data.productivity[month], 0).toFixed(2));
+        records.push({ team, month, metric: 'productivity', previousValue: baseProd });
+
+        PRODUCTS.forEach(product => {
+            const mixValue = Number((toNumber(data.productMix[product][month], 0) * 100).toFixed(1));
+            const abpaValue = Math.round(toNumber(data.abpa[product][month], 0));
+            records.push({ team, month, metric: 'mix', product, previousValue: mixValue });
+            records.push({ team, month, metric: 'abpa', product, previousValue: abpaValue });
+        });
+    });
+
+    return {
+        team,
+        finalize() {
+            const changes = [];
+            records.forEach(entry => {
+                let newValue;
+                if (entry.metric === 'productivity') {
+                    newValue = Number(toNumber(data.productivity[entry.month], 0).toFixed(2));
+                    if (!valuesApproximatelyEqual(entry.previousValue, newValue, 0.01)) {
+                        changes.push({ ...entry, newValue });
+                    }
+                } else if (entry.metric === 'mix') {
+                    newValue = Number((toNumber(data.productMix[entry.product][entry.month], 0) * 100).toFixed(1));
+                    if (!valuesApproximatelyEqual(entry.previousValue, newValue, 0.05)) {
+                        changes.push({ ...entry, newValue });
+                    }
+                } else if (entry.metric === 'abpa') {
+                    newValue = Math.round(toNumber(data.abpa[entry.product][entry.month], 0));
+                    if (!valuesApproximatelyEqual(entry.previousValue, newValue, 0.5)) {
+                        changes.push({ ...entry, newValue });
+                    }
+                }
+            });
+            return changes;
+        }
+    };
+}
+
+function pushBaselineUndoAction(changes) {
+    if (!Array.isArray(changes) || !changes.length || typeof AppState === 'undefined') {
+        return;
+    }
+    AppState.undoStack.push({
+        type: 'baselineApply',
+        data: changes,
+        context: { tab: 'production', subtab: 'investments' }
+    });
+    AppState.redoStack = [];
+    if (typeof updateUndoRedoButtons === 'function') {
+        updateUndoRedoButtons();
+    }
+}
+
+function persistBaselineChanges(changes) {
+    if (!Array.isArray(changes) || !changes.length) return;
+    if (typeof getFieldAndDbValueFromState !== 'function' || typeof getPeriodDate !== 'function') return;
+    if (!AppState.currentVersion) return;
+
+    const updates = changes.map(change => {
+        const mapping = getFieldAndDbValueFromState(change.metric, change.product, null, change.newValue);
+        if (!mapping || !mapping.fieldName) {
+            return null;
+        }
+        return {
+            teamId: parseInt(change.team, 10),
+            periodDate: getPeriodDate(change.month),
+            field: mapping.fieldName,
+            newValue: mapping.dbValue
+        };
+    }).filter(Boolean);
+
+    if (!updates.length) return;
+
+    API.forecasts.bulkUpdate({
+        updates,
+        versionId: AppState.currentVersion.version_id,
+        updatedBy: AppState.currentUser
+    }).then(() => {
+        if (typeof showSaveIndicator === 'function') {
+            showSaveIndicator();
+        }
+    }).catch(error => {
+        console.error('Failed to save baseline changes', error);
+        if (typeof showError === 'function') {
+            showError('Failed to save baseline changes');
+        }
+    });
+}
+
+
 function handleProductionBaselinePeriodChange(event) {
     const select = event.target;
     const period = parseInt(select.value, 10);
@@ -293,6 +401,7 @@ function handleProductionBaselinePeriodChange(event) {
     const teamKey = `Team ${AppState.currentTeam}`;
     const data = AppState.teamData[AppState.currentForecast]?.[teamKey];
     if (data && months.length) {
+        const snapshot = createBaselineChangeSnapshot({ data, months, teamId: AppState.currentTeam });
         const averages = computeProductionBaselineAverages(data, months, period);
         updateBaselineAverageCells(select.closest('.production-baseline-column'), averages, period);
         applyProductionBaselines({
@@ -301,6 +410,13 @@ function handleProductionBaselinePeriodChange(event) {
             teamId: AppState.currentTeam,
             updateDom: AppState.currentTab === 'production' && AppState.productionSubtab === 'investments'
         });
+        if (snapshot) {
+            const changes = snapshot.finalize();
+            if (changes.length) {
+                pushBaselineUndoAction(changes);
+                persistBaselineChanges(changes);
+            }
+        }
     }
 }
 
@@ -351,6 +467,7 @@ function handleProductionBaselineInputChange(event) {
     const teamKey = `Team ${AppState.currentTeam}`;
     const data = AppState.teamData[AppState.currentForecast]?.[teamKey];
     if (data && months.length) {
+        const snapshot = createBaselineChangeSnapshot({ data, months, teamId: AppState.currentTeam });
         const period = baselineState.period || 12;
         const averages = computeProductionBaselineAverages(data, months, period);
         updateBaselineAverageCells(column, averages, period);
@@ -360,6 +477,13 @@ function handleProductionBaselineInputChange(event) {
             teamId: AppState.currentTeam,
             updateDom: AppState.currentTab === 'production' && AppState.productionSubtab === 'investments'
         });
+        if (snapshot) {
+            const changes = snapshot.finalize();
+            if (changes.length) {
+                pushBaselineUndoAction(changes);
+                persistBaselineChanges(changes);
+            }
+        }
     }
 }
 

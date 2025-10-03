@@ -1880,7 +1880,7 @@ function undo() {
         }
         
         updateAdditionalProductCalculations(team, month, product);
-    } else if (action.type === 'percentageChange') {
+    } else if (action.type === 'percentageChange' || action.type === 'baselineApply') {
         action.data.forEach(state => {
             const teamKey = `Team ${state.team}`;
             
@@ -1973,7 +1973,7 @@ function undo() {
             const { team, month, product, metric, previousValue } = action.data;
             const { fieldName, dbValue } = getFieldAndDbValueFromState(metric, product, null, previousValue);
             updates.push({ teamId: parseInt(team), periodDate: getPeriodDate(month), field: fieldName, newValue: dbValue });
-        } else if (action.type === 'percentageChange' || action.type === 'bulkPaste') {
+        } else if (action.type === 'percentageChange' || action.type === 'bulkPaste' || action.type === 'baselineApply') {
             const states = action.data || [];
             states.forEach(state => {
                 const { fieldName, dbValue } = getFieldAndDbValueFromState(state.metric, state.product, state.pg, state.previousValue);
@@ -2013,7 +2013,7 @@ function undo() {
             const { team, month, product, metric, newValue } = action.data;
             const { fieldName, dbValue } = getFieldAndDbValueFromState(metric, product, null, newValue);
             updates.push({ teamId: parseInt(team), periodDate: getPeriodDate(month), field: fieldName, newValue: dbValue });
-        } else if (action.type === 'percentageChange' || action.type === 'bulkPaste') {
+        } else if (action.type === 'percentageChange' || action.type === 'bulkPaste' || action.type === 'baselineApply') {
             const states = action.data || [];
             states.forEach(state => {
                 const { fieldName, dbValue } = getFieldAndDbValueFromState(state.metric, state.product, state.pg, state.newValue);
@@ -2216,7 +2216,7 @@ function redo() {
       newValue: newValue
     });
 
-  } else if (action.type === 'percentageChange' || action.type === 'bulkPaste') {
+  } else if (action.type === 'percentageChange' || action.type === 'bulkPaste' || action.type === 'baselineApply') {
     // Re-apply all pasted/percentage changes and persist once
     (action.data || []).forEach(state => {
       const teamKey = `Team ${state.team}`;

@@ -184,7 +184,15 @@
             AppState.teamCategory = 'non-sales';
             AppState.isGroupView = false;
             AppState.currentGroup = null;
-            AppState.currentTeam = group?.teams?.[0]?.team_id || teamId;
+
+            let selectedTeamId = teamId;
+            if (group?.teams?.length && !group.teams.some(t => Number(t.team_id) === selectedTeamId)) {
+                selectedTeamId = group.teams[0].team_id;
+            }
+
+            AppState.currentNonSalesTeam = selectedTeamId;
+            AppState.lastSelectedTeams = AppState.lastSelectedTeams || { sales: AppState.currentTeam || 1, nonSales: selectedTeamId };
+            AppState.lastSelectedTeams.nonSales = selectedTeamId;
 
             highlightSidebarSelection();
             updateCurrentTeamLabel();
@@ -195,6 +203,7 @@
 
             restoreScrollAfterLoad();
             return;
+        }
         }
 
         AppState.currentTeam = teamId;
@@ -267,9 +276,10 @@
 
         const group = NON_SALES_GROUPS.find(g => g.key === groupKey);
         if (group?.teams?.length) {
-            AppState.currentTeam = group.teams[0].team_id;
-            AppState.lastSelectedTeams = AppState.lastSelectedTeams || { sales: AppState.currentTeam || 1, nonSales: null };
-            AppState.lastSelectedTeams.nonSales = AppState.currentTeam;
+            const selectedId = group.teams[0].team_id;
+            AppState.currentNonSalesTeam = selectedId;
+            AppState.lastSelectedTeams = AppState.lastSelectedTeams || { sales: AppState.currentTeam || 1, nonSales: selectedId };
+            AppState.lastSelectedTeams.nonSales = selectedId;
         }
 
         highlightSidebarSelection();

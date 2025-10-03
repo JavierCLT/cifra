@@ -7,22 +7,28 @@ const AppState = {
     isGroupView: false,
     isBulkPasting: false,
     isProgrammaticChange: false,
-    currentTab: 'headcount',
+    teamCategory: 'sales', // 'sales' | 'non-sales'
     headcountSubtab: 'sales', // 'sales' | 'non-sales'
     productionSubtab: 'investments', // 'investments' | 'banking'
+    currentTab: 'headcount',
     currentForecast: null,
     currentVersion: null,
+    lastSelectedTeams: { sales: 1, nonSales: 9201 },
+    lastSelectedGroups: { nonSales: null },
+    currentNonSalesGroup: null,
+    currentNonSalesTeam: null,
+    nonSalesLoadStatus: {},
     teams: [],
     forecastVersions: [],
     calendarPeriods: [],
     teamData: {},
-    nonSalesData: {}, // mirrors teamData shape but only pgLevels/forecastStatus
+    nonSalesData: {}, // { [versionKey]: { [groupKey]: { forecastStatus, teams, teamOrder } } }
     selectedInputs: [],
     undoStack: [],
     redoStack: [],
     productionBaselineState: {},
     productionConfig: null,
-    scrollPositions: { 
+    scrollPositions: {
         headcount: 0,
         headcount_sales: 0,
         headcount_non_sales: 0,
@@ -46,6 +52,89 @@ const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'A
 const SELF_DIRECTED_PRODUCT_NAME = PRODUCTS[0];
 const MGIA_PRODUCT_NAME = PRODUCTS[2];
 let GROUPS = {}; // Will be populated from API
+window.GROUPS = GROUPS;
+
+const NON_SALES_GROUPS = [
+    {
+        key: 'operations',
+        displayName: 'Operations',
+        teams: [
+            { team_id: 9201, team_name: 'Team 1', group_name: 'operations', group_display_name: 'Operations', team_category: 'non-sales' },
+            { team_id: 9202, team_name: 'Team 2', group_name: 'operations', group_display_name: 'Operations', team_category: 'non-sales' },
+            { team_id: 9203, team_name: 'Team 3', group_name: 'operations', group_display_name: 'Operations', team_category: 'non-sales' },
+            { team_id: 9204, team_name: 'Team 4', group_name: 'operations', group_display_name: 'Operations', team_category: 'non-sales' }
+        ]
+    },
+    {
+        key: 'management',
+        displayName: 'Management',
+        teams: [
+            { team_id: 9211, team_name: 'Team 1', group_name: 'management', group_display_name: 'Management', team_category: 'non-sales' },
+            { team_id: 9212, team_name: 'Team 2', group_name: 'management', group_display_name: 'Management', team_category: 'non-sales' },
+            { team_id: 9213, team_name: 'Team 3', group_name: 'management', group_display_name: 'Management', team_category: 'non-sales' },
+            { team_id: 9214, team_name: 'Team 4', group_name: 'management', group_display_name: 'Management', team_category: 'non-sales' }
+        ]
+    },
+    {
+        key: 'real-estate',
+        displayName: 'Real Estate',
+        teams: [
+            { team_id: 9231, team_name: 'Team 1', group_name: 'real-estate', group_display_name: 'Real Estate', team_category: 'non-sales' },
+            { team_id: 9232, team_name: 'Team 2', group_name: 'real-estate', group_display_name: 'Real Estate', team_category: 'non-sales' },
+            { team_id: 9233, team_name: 'Team 3', group_name: 'real-estate', group_display_name: 'Real Estate', team_category: 'non-sales' },
+            { team_id: 9234, team_name: 'Team 4', group_name: 'real-estate', group_display_name: 'Real Estate', team_category: 'non-sales' }
+        ]
+    },
+    {
+        key: 'hr',
+        displayName: 'HR',
+        teams: [
+            { team_id: 9221, team_name: 'Team 1', group_name: 'hr', group_display_name: 'HR', team_category: 'non-sales' },
+            { team_id: 9222, team_name: 'Team 2', group_name: 'hr', group_display_name: 'HR', team_category: 'non-sales' },
+            { team_id: 9223, team_name: 'Team 3', group_name: 'hr', group_display_name: 'HR', team_category: 'non-sales' },
+            { team_id: 9224, team_name: 'Team 4', group_name: 'hr', group_display_name: 'HR', team_category: 'non-sales' }
+        ]
+    }
+];
+
+const NON_SALES_TEAMS = NON_SALES_GROUPS.flatMap(group => group.teams);
+
+if (!AppState.lastSelectedGroups || typeof AppState.lastSelectedGroups !== 'object') {
+    AppState.lastSelectedGroups = { nonSales: null };
+}
+if (!AppState.lastSelectedGroups.nonSales) {
+    AppState.lastSelectedGroups.nonSales = NON_SALES_GROUPS.length ? NON_SALES_GROUPS[0].key : null;
+}
+AppState.currentNonSalesGroup = AppState.currentNonSalesGroup || AppState.lastSelectedGroups.nonSales;
+
+if (!AppState.lastSelectedTeams || typeof AppState.lastSelectedTeams !== 'object') {
+    AppState.lastSelectedTeams = { sales: AppState.currentTeam || 1, nonSales: NON_SALES_TEAMS[0]?.team_id || null };
+}
+if (!AppState.lastSelectedTeams.nonSales && NON_SALES_TEAMS.length) {
+    AppState.lastSelectedTeams.nonSales = NON_SALES_TEAMS[0].team_id;
+}
+AppState.currentNonSalesTeam = AppState.currentNonSalesTeam || AppState.lastSelectedTeams.nonSales || null;
+
+if (!AppState.lastSelectedGroups || typeof AppState.lastSelectedGroups !== "object") {
+    AppState.lastSelectedGroups = { nonSales: null };
+}
+if (!AppState.lastSelectedGroups.nonSales) {
+    AppState.lastSelectedGroups.nonSales = NON_SALES_GROUPS.length ? NON_SALES_GROUPS[0].key : null;
+}
+AppState.currentNonSalesGroup = AppState.currentNonSalesGroup || AppState.lastSelectedGroups.nonSales;
+
+if (!AppState.lastSelectedTeams || typeof AppState.lastSelectedTeams !== "object") {
+    AppState.lastSelectedTeams = { sales: AppState.currentTeam || 1, nonSales: NON_SALES_TEAMS[0]?.team_id || null };
+}
+if (!AppState.lastSelectedTeams.nonSales && NON_SALES_TEAMS.length) {
+    AppState.lastSelectedTeams.nonSales = NON_SALES_TEAMS[0].team_id;
+}
+AppState.currentNonSalesTeam = AppState.currentNonSalesTeam || AppState.lastSelectedTeams.nonSales || null;
+
+window.AppState = AppState;
+window.NON_SALES_GROUPS = NON_SALES_GROUPS;
+window.NON_SALES_TEAMS = NON_SALES_TEAMS;
+window.GROUPS = GROUPS;
 
 // Helpers to manage scroll per (tab, subtab)
 function getScrollKeyForState(tabName = AppState.currentTab) {
@@ -149,6 +238,7 @@ async function initializeApp() {
 
         // Build GROUPS object dynamically
         GROUPS = {};
+        window.GROUPS = GROUPS;
         Object.entries(groupsData).forEach(([groupName, groupConfig]) => {
             // Store team IDs for consistency
             GROUPS[groupName] = groupConfig.teams.map(team => team.id);
@@ -264,8 +354,8 @@ function initializePasteHandlers() {
         if (!text) return;
 
         // Only intercept when multiple cells likely (tabs/newlines present)
-        if (!/[\t\n\r]/.test(text)) {
-            // Single value paste â€“ let default behavior happen
+        if (!/[\\t\\r\\n]/.test(text)) {
+            // Single value paste - let default behavior happen
             return;
         }
 
@@ -283,7 +373,7 @@ function initializePasteHandlers() {
 function parseClipboardMatrix(rawText) {
     // Normalize newlines and trim trailing blank lines
     const lines = rawText
-        .replace(/\r/g, '\n')
+        .replace(/\r\n?/g, '\n')
         .split('\n')
         .filter((line, idx, arr) => line.length > 0 || (idx < arr.length - 1 && arr[idx + 1].length > 0));
     const matrix = lines
@@ -705,59 +795,77 @@ function selectAllVisibleCells() {
 // Initialize sidebar with teams and groups
 function initializeSidebar() {
     const teamNav = document.getElementById('teamNav');
+    if (!teamNav) return;
+
     teamNav.innerHTML = '';
-    
-    // Group teams by their groups using the loaded teams data
+
+    if (AppState.headcountSubtab === 'non-sales') {
+        NON_SALES_GROUPS.forEach(group => {
+            const header = document.createElement('div');
+            header.className = 'group-header group-header--static';
+            header.dataset.groupKey = group.key;
+            header.innerHTML = '<span class="group-name">' + group.displayName + '</span>';
+            if (group.key === AppState.currentNonSalesGroup) {
+                header.classList.add('active');
+            }
+            header.addEventListener('click', (event) => {
+                event.preventDefault();
+                if (typeof switchToNonSalesGroup === 'function') {
+                    switchToNonSalesGroup(group.key);
+                }
+            });
+            teamNav.appendChild(header);
+        });
+        return;
+    }
+
     const teamsByGroup = {};
-    AppState.teams.forEach(team => {
-        if (!teamsByGroup[team.group_name]) {
-            teamsByGroup[team.group_name] = {
-                displayName: team.group_display_name || team.group_name,
+    (AppState.teams || []).forEach(team => {
+        const key = team.group_name || 'ungrouped';
+        if (!teamsByGroup[key]) {
+            teamsByGroup[key] = {
+                displayName: team.group_display_name || key,
                 teams: []
             };
         }
-        teamsByGroup[team.group_name].teams.push(team);
+        teamsByGroup[key].teams.push(team);
     });
-    
-    // Create UI for each group
+
     Object.entries(teamsByGroup).forEach(([groupName, groupData]) => {
-        // Create group header
         const groupHeader = document.createElement('div');
         groupHeader.className = 'group-header';
-        groupHeader.innerHTML = `
-            <span class="group-name">${groupData.displayName}</span>
-            <span class="arrow">&#9662;</span>
-        `;
-        
-        groupHeader.onclick = (e) => {
-            e.stopPropagation();
-            if (e.target.classList.contains('arrow')) {
+        groupHeader.dataset.groupKey = groupName;
+        groupHeader.innerHTML = '<span class="group-name">' + groupData.displayName + '</span><span class="arrow">&#9662;</span>';
+        groupHeader.addEventListener('click', (event) => {
+            event.preventDefault();
+            if (event.target.closest('.arrow')) {
                 toggleGroup(groupHeader);
-            } else {
+            } else if (typeof switchToGroup === 'function') {
                 switchToGroup(groupName);
             }
-        };
-        
+        });
         teamNav.appendChild(groupHeader);
-        
-        // Create group items container
+
         const groupItems = document.createElement('div');
         groupItems.className = 'group-items';
-        
         groupData.teams.forEach(team => {
             const li = document.createElement('li');
-            const a = document.createElement('a');
-            a.href = '#';
-            a.textContent = team.team_name;
-            a.onclick = (e) => {
-                e.preventDefault();
-                switchTeam(team.team_id);
-            };
-            if (team.team_id === 1) a.classList.add('active');
-            li.appendChild(a);
+            const link = document.createElement('a');
+            link.href = '#';
+            link.textContent = team.team_name;
+            link.dataset.teamId = team.team_id;
+            if (Number(team.team_id) === Number(AppState.currentTeam)) {
+                link.classList.add('active');
+            }
+            link.addEventListener('click', (event) => {
+                event.preventDefault();
+                if (typeof switchTeam === 'function') {
+                    switchTeam(team.team_id);
+                }
+            });
+            li.appendChild(link);
             groupItems.appendChild(li);
         });
-        
         teamNav.appendChild(groupItems);
     });
 }
@@ -813,6 +921,7 @@ async function getGroupData(groupName) {
         try {
             const groupsResponse = await API.teams.getGroups();
             GROUPS = {};
+        window.GROUPS = GROUPS;
             Object.entries(groupsResponse).forEach(([key, groupConfig]) => {
                 // Store team IDs instead of names for consistency
                 GROUPS[key] = groupConfig.teams.map(team => team.id);
@@ -1073,6 +1182,88 @@ function transformApiData(apiData) {
     
     return transformed;
 }
+function monthLabelFromDate(periodDate) {
+    if (!periodDate) {
+        return null;
+    }
+    const normalized = String(periodDate).slice(0, 10);
+    const [year, month] = normalized.split('-');
+    const idx = parseInt(month, 10) - 1;
+    if (!Number.isFinite(idx) || idx < 0 || idx > 11) {
+        return null;
+    }
+    const labels = Array.isArray(window.MONTH_ABBREVIATIONS) ? window.MONTH_ABBREVIATIONS : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${labels[idx]}-${year.slice(-2)}`;
+}
+
+function transformNonSalesGroupResponse(response) {
+    if (!response) {
+        return null;
+    }
+    const data = response.data || response;
+    const months = generateMonthList();
+    const defaultGroup = Array.isArray(window.NON_SALES_GROUPS) && window.NON_SALES_GROUPS.length ? window.NON_SALES_GROUPS[0].key : 'non-sales';
+    const groupKey = data.groupKey || AppState.currentNonSalesGroup || defaultGroup;
+
+    const result = {
+        groupKey,
+        groupName: data.groupName || '',
+        forecastStatus: {},
+        teams: {},
+        teamOrder: []
+    };
+
+    const labelLookup = {};
+    if (Array.isArray(data.periods)) {
+        data.periods.forEach(period => {
+            const label = period?.label || monthLabelFromDate(period?.period_date);
+            if (!label) {
+                return;
+            }
+            result.forecastStatus[label] = period?.status === 'Forecast' ? 'Forecast' : 'Actual';
+            const normalized = String(period.period_date).slice(0, 10);
+            labelLookup[normalized] = label;
+        });
+    }
+
+    months.forEach(month => {
+        if (!result.forecastStatus[month]) {
+            result.forecastStatus[month] = 'Forecast';
+        }
+    });
+
+    if (Array.isArray(data.teams)) {
+        data.teams.forEach(team => {
+            const teamId = team.team_id || team.teamId;
+            if (!Number.isFinite(teamId)) {
+                return;
+            }
+            const teamName = team.team_name || team.teamName || `Team ${teamId}`;
+            const values = {};
+            const sourceValues = team.values || {};
+            Object.entries(sourceValues).forEach(([periodDate, rawValue]) => {
+                const normalized = String(periodDate).slice(0, 10);
+                const label = labelLookup[normalized] || monthLabelFromDate(normalized);
+                if (!label) {
+                    return;
+                }
+                const numeric = typeof rawValue === 'number' ? rawValue : parseInt(rawValue, 10) || 0;
+                values[label] = numeric;
+            });
+            months.forEach(month => {
+                if (values[month] == null) {
+                    values[month] = 0;
+                }
+            });
+            result.teams[teamId] = { teamId, teamName, values };
+            if (!result.teamOrder.includes(teamId)) {
+                result.teamOrder.push(teamId);
+            }
+        });
+    }
+
+    return result;
+}
 
 // Switch between teams
 async function switchTeam(teamNumber) {
@@ -1287,8 +1478,149 @@ function toggleGroup(header) {
 
 // Render current tab
 async function renderCurrentTab() {
+    if (AppState.currentTab === 'headcount') {
+        const subtabs = document.getElementById('headcount-subtabs');
+        if (subtabs) {
+            subtabs.style.display = 'flex';
+        }
+
+        if (AppState.headcountSubtab === 'non-sales') {
+            AppState.teamCategory = 'non-sales';
+            AppState.isGroupView = false;
+            AppState.currentGroup = null;
+
+    if (typeof initializeSidebar === 'function') {
+        initializeSidebar();
+    }
+    if (typeof window.highlightSidebarSelection === 'function') {
+        window.highlightSidebarSelection();
+    }
+    if (typeof window.updateCurrentTeamLabel === 'function') {
+        window.updateCurrentTeamLabel();
+    }
+
+            const salesContainer = document.getElementById('sales-headcount-subtab');
+            const nsContainer = document.getElementById('non-sales-headcount-subtab');
+            if (salesContainer) salesContainer.style.display = 'none';
+            if (nsContainer) nsContainer.style.display = '';
+
+            const groupKey = AppState.currentNonSalesGroup || (NON_SALES_GROUPS.length ? NON_SALES_GROUPS[0].key : null);
+            if (!groupKey) {
+                if (nsContainer) {
+                    nsContainer.innerHTML = '<div class="loading">No non-sales groups configured.</div>';
+                }
+                return;
+            }
+
+            AppState.currentNonSalesGroup = groupKey;
+            AppState.lastSelectedGroups = AppState.lastSelectedGroups || {};
+            AppState.lastSelectedGroups.nonSales = groupKey;
+
+            const forecastKey = AppState.currentForecast;
+            if (!forecastKey) {
+                if (nsContainer) {
+                    nsContainer.innerHTML = '<div class="loading">Select a forecast version to view non-sales headcount.</div>';
+                }
+                return;
+            }
+
+            if (!AppState.nonSalesData[forecastKey]) {
+                AppState.nonSalesData[forecastKey] = {};
+            }
+
+            if (!AppState.nonSalesData[forecastKey][groupKey] || AppState.nonSalesData[forecastKey][groupKey].needsRefresh) {
+                try {
+                    const response = await API.nonSales.getGroup(groupKey, AppState.currentVersion?.version_id);
+                    const groupData = transformNonSalesGroupResponse(response);
+                    const preparedGroup = groupData || { groupKey, forecastStatus: {}, teams: {}, teamOrder: [] };
+                    preparedGroup.needsRefresh = false;
+                    AppState.nonSalesData[forecastKey][groupKey] = preparedGroup;
+                } catch (error) {
+                    console.error('Failed to load non-sales data:', error);
+                    if (nsContainer) {
+                        nsContainer.innerHTML = '<div class="loading">Failed to load non-sales data.</div>';
+                    }
+                    return;
+                }
+            }
+
+            const nsGroupData = AppState.nonSalesData[forecastKey][groupKey];
+            if (!nsGroupData) {
+                if (nsContainer) {
+                    nsContainer.innerHTML = '<div class="loading">Non-sales data unavailable.</div>';
+                }
+                return;
+            }
+
+            if (!AppState.lastSelectedTeams) {
+                AppState.lastSelectedTeams = { sales: AppState.currentTeam || 1, nonSales: nsGroupData.teamOrder?.[0] || null };
+            }
+            if (!AppState.lastSelectedTeams.nonSales && nsGroupData.teamOrder?.length) {
+                AppState.lastSelectedTeams.nonSales = nsGroupData.teamOrder[0];
+            }
+            if (!AppState.currentNonSalesTeam) {
+                AppState.currentNonSalesTeam = AppState.lastSelectedTeams.nonSales || nsGroupData.teamOrder?.[0] || null;
+            }
+
+            renderNonSalesHeadcountTab(nsGroupData, { containerId: 'non-sales-headcount-subtab' });
+            return;
+        }
+
+        // Sales headcount branch
+        AppState.teamCategory = 'sales';
+        AppState.isGroupView = false;
+        AppState.currentGroup = null;
+
+        if (typeof initializeSidebar === 'function') {
+        initializeSidebar();
+    }
+        if (typeof window.highlightSidebarSelection === 'function') {
+            window.highlightSidebarSelection(AppState.currentTeam);
+        }
+        if (typeof window.updateCurrentTeamLabel === 'function') {
+            window.updateCurrentTeamLabel();
+        }
+
+        const salesContainer = document.getElementById('sales-headcount-subtab');
+        const nsContainer = document.getElementById('non-sales-headcount-subtab');
+        if (salesContainer) salesContainer.style.display = '';
+        if (nsContainer) nsContainer.style.display = 'none';
+
+        const forecastKey = AppState.currentForecast;
+        if (!forecastKey) {
+            if (salesContainer) {
+                salesContainer.innerHTML = '<div class="loading">Select a forecast version to view sales headcount.</div>';
+            }
+            return;
+        }
+
+        if (!AppState.lastSelectedTeams) {
+            AppState.lastSelectedTeams = { sales: AppState.currentTeam || 1, nonSales: AppState.currentNonSalesTeam || null };
+        }
+        if (!Number.isFinite(AppState.currentTeam) || AppState.currentTeam >= 9000) {
+            AppState.currentTeam = AppState.lastSelectedTeams.sales || 1;
+        }
+        AppState.lastSelectedTeams.sales = AppState.currentTeam;
+
+        const teamKey = `Team ${AppState.currentTeam}`;
+        if (!AppState.teamData[forecastKey]) {
+            AppState.teamData[forecastKey] = {};
+        }
+        if (!AppState.teamData[forecastKey][teamKey]) {
+            await loadTeamData(AppState.currentTeam);
+        }
+        const data = AppState.teamData[forecastKey][teamKey];
+        if (!data) {
+            console.warn('Sales data missing for team', teamKey, 'forecast', forecastKey);
+            return;
+        }
+
+        renderHeadcountTab(data, { containerId: 'sales-headcount-subtab', mode: 'sales' });
+        return;
+    }
+
     let data;
-    
+
     if (AppState.isGroupView) {
         data = await getGroupData(AppState.currentGroup);
         if (!data) return;
@@ -1300,117 +1632,20 @@ async function renderCurrentTab() {
             return;
         }
     }
-    
+
     switch(AppState.currentTab) {
-        case 'headcount':
-            // Ensure subtabs are visible
-            const subtabs = document.getElementById('headcount-subtabs');
-            if (subtabs) subtabs.style.display = 'flex';
-
-            // Ensure containers visibility matches selected subtab
-            const salesContainer = document.getElementById('sales-headcount-subtab');
-            const nsContainer = document.getElementById('non-sales-headcount-subtab');
-            if (AppState.headcountSubtab === 'sales') {
-                if (salesContainer) salesContainer.style.display = '';
-                if (nsContainer) nsContainer.style.display = 'none';
-                renderHeadcountTab(data, { containerId: 'sales-headcount-subtab', mode: 'sales' });
-            } else {
-                // Prepare non-sales data if missing
-                const teamKey = `Team ${AppState.currentTeam}`;
-                if (!AppState.nonSalesData[AppState.currentForecast]) {
-                    AppState.nonSalesData[AppState.currentForecast] = {};
-                }
-                if (!AppState.nonSalesData[AppState.currentForecast][teamKey]) {
-                    const months = generateMonthList();
-                    const ns = { forecastStatus: {}, pgLevels: {} };
-                    // clone forecast/actual flags from sales data, init zeros
-                    ns.forecastStatus = { ...data.forecastStatus };
-                    PG_LEVELS.forEach(pg => {
-                        ns.pgLevels[pg] = {};
-                        months.forEach(m => { ns.pgLevels[pg][m] = 0; });
-                    });
-                    AppState.nonSalesData[AppState.currentForecast][teamKey] = ns;
-                }
-                const nsData = AppState.nonSalesData[AppState.currentForecast][teamKey];
-
-                // Attempt to load Non-Sales ACTUALS then any saved FORECAST rows from backend
-                try {
-                    // 1) Actuals
-                    const actualsRows = await API.nonSales.getActualsTeam(AppState.currentTeam);
-                    if (Array.isArray(actualsRows) && actualsRows.length) {
-                        const toMonthStr = (dateStr) => {
-                            if (!dateStr) return null;
-                            const [y, m] = String(dateStr).slice(0,10).split('-');
-                            const map = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                            const mm = parseInt(m, 10);
-                            if (!mm || mm < 1 || mm > 12) return null;
-                            return `${map[mm-1]}-${y.slice(-2)}`;
-                        };
-                        actualsRows.forEach(r => {
-                            const mon = toMonthStr(r.period_date);
-                            if (!mon || nsData.forecastStatus[mon] !== 'Actual') return;
-                            for (let i=1;i<=7;i++) {
-                                const val = parseInt(r[`ns_pg${i}_headcount`] || 0, 10);
-                                if (!Number.isNaN(val)) nsData.pgLevels[`PG${i}`][mon] = val;
-                            }
-                        });
-                    }
-
-                    // 2) Forecast rows (override forecast months only)
-                    const rows = await API.nonSales.getTeam(
-                        AppState.currentTeam,
-                        AppState.currentVersion?.version_id
-                    );
-                    if (Array.isArray(rows) && rows.length) {
-                        // Helper to convert 'YYYY-MM-01' -> 'Mon-YY'
-                        const toMonthStr = (dateStr) => {
-                            if (!dateStr) return null;
-                            const [y, m] = dateStr.split('-');
-                            const map = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-                            const mm = parseInt(m, 10);
-                            if (!mm || mm < 1 || mm > 12) return null;
-                            return `${map[mm-1]}-${y.slice(-2)}`;
-                        };
-                        rows.forEach(r => {
-                            const mon = toMonthStr(String(r.period_date).slice(0,10));
-                            if (!mon || nsData.forecastStatus[mon] !== 'Forecast') return;
-                            // Fill each ns_pgX_headcount field if present
-                            for (let i=1;i<=7;i++) {
-                                const key = `ns_pg${i}_headcount`;
-                                if (r.hasOwnProperty(key)) {
-                                    const val = parseInt(r[key] || 0, 10);
-                                    if (!Number.isNaN(val)) {
-                                        const pg = `PG${i}`;
-                                        if (!nsData.pgLevels[pg]) nsData.pgLevels[pg] = {};
-                                        nsData.pgLevels[pg][mon] = val;
-                                    }
-                                }
-                            }
-                        });
-                    }
-                } catch (e) {
-                    console.warn('Non-sales fetch failed; using defaults', e);
-                }
-                if (salesContainer) salesContainer.style.display = 'none';
-                if (nsContainer) nsContainer.style.display = '';
-                renderHeadcountTab(nsData, { containerId: 'non-sales-headcount-subtab', mode: 'non-sales' });
-            }
-            break;
-        case 'production':
-            // Hide headcount subtabs when other main tabs are active
+        case 'production': {
             const hcSubtabs = document.getElementById('headcount-subtabs');
             if (hcSubtabs) hcSubtabs.style.display = 'none';
 
-            // Ensure production subtabs are visible
             const productionToolbar = document.getElementById('production-toolbar');
             if (productionToolbar) productionToolbar.style.display = 'flex';
 
+            updateProductionToolbarCaption(AppState.productionSubtab);
+
             const invC = document.getElementById('production-investments-subtab');
-        const toolbarCaption = document.querySelector('.production-toolbar-caption');
-        if (toolbarCaption) {
-            toolbarCaption.classList.toggle('baseline-note--active', AppState.productionSubtab === 'investments');
-        }
             const bankC = document.getElementById('production-banking-subtab');
+
             if (AppState.productionSubtab === 'investments') {
                 if (invC) invC.style.display = '';
                 if (bankC) bankC.style.display = 'none';
@@ -1423,48 +1658,20 @@ async function renderCurrentTab() {
                 renderProductionTab(data, { containerId: 'production-banking-subtab', mode: 'banking' });
             }
             break;
+        }
         case 'referrals':
-            const hcSubtabs2 = document.getElementById('headcount-subtabs');
-            if (hcSubtabs2) hcSubtabs2.style.display = 'none';
             renderReferralsTab(data);
             break;
         case 'incentive':
-            const hcSubtabs3 = document.getElementById('headcount-subtabs');
-            if (hcSubtabs3) hcSubtabs3.style.display = 'none';
             renderIncentiveTab(data);
             break;
         case 'kmpc':
-            const hcSubtabs4 = document.getElementById('headcount-subtabs');
-            if (hcSubtabs4) hcSubtabs4.style.display = 'none';
             renderKMPCTab(data);
             break;
         case 'finance':
-            const hcSubtabs5 = document.getElementById('headcount-subtabs');
-            if (hcSubtabs5) hcSubtabs5.style.display = 'none';
             renderFinanceTab(data);
             break;
     }
-
-    requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-            const tabName = AppState.currentTab;
-            const savedPosition = AppState.scrollPositions[tabName];
-            const wrapper = document.querySelector(`#${tabName}-tab .data-table-wrapper`);
-            if (!wrapper) return;
-            if (tabName === 'incentive') {
-                // For Incentive, always restore saved position (including 0) to avoid jump
-                if (savedPosition !== undefined) {
-                    wrapper.scrollLeft = savedPosition;
-                }
-            } else {
-                if (savedPosition !== undefined && savedPosition !== 0) {
-                    wrapper.scrollLeft = savedPosition;
-                } else {
-                    scrollToJan2024();
-                }
-            }
-        });
-    });
 }
 
 // Handle headcount changes
@@ -1818,27 +2025,35 @@ function undo() {
         };
         requestAnimationFrame(() => { renderCurrentTab(); requestAnimationFrame(setValUndo); });
     } else if (action.type === 'nonSalesHeadcountChange') {
-        const { team, pg, month, previousValue } = action.data;
-        const teamKey = `Team ${team}`;
-        const nsData = AppState.nonSalesData?.[AppState.currentForecast]?.[teamKey];
-        if (nsData) {
-            nsData.pgLevels[pg][month] = parseInt(previousValue) || 0;
-            // Update total cell for the month
-            const totalCell = document.getElementById(`ns-headcount-total-${month}`);
+        const { groupKey, teamId, month, previousValue } = action.data;
+        const versionKey = AppState.currentForecast;
+        const groupStore = AppState.nonSalesData?.[versionKey]?.[groupKey];
+        if (groupStore && groupStore.teams?.[teamId]) {
+            if (!groupStore.teams[teamId].values) {
+                groupStore.teams[teamId].values = {};
+            }
+            groupStore.teams[teamId].values[month] = previousValue ?? 0;
+            const totalCell = document.getElementById(`ns-headcount-total-${groupKey}-${month}`);
             if (totalCell) {
-                const total = PG_LEVELS.reduce((sum, level) => sum + (nsData.pgLevels[level][month] || 0), 0);
+                const total = (groupStore.teamOrder || Object.keys(groupStore.teams)).reduce((sum, id) => {
+                    const entry = groupStore.teams[id];
+                    return sum + (entry?.values?.[month] ?? 0);
+                }, 0);
                 totalCell.textContent = total;
             }
         }
         requestAnimationFrame(() => {
             renderCurrentTab();
             requestAnimationFrame(() => {
-                const nsContainerId = 'non-sales-headcount-subtab';
-                const input = document.querySelector(`#${nsContainerId} input[data-month="${month}"][data-pg="${pg}"][data-team="${team}"]`);
-                if (input) input.value = parseInt(previousValue) || 0;
-                const totalCell = document.getElementById(`ns-headcount-total-${month}`);
-                if (totalCell) {
-                    const total = PG_LEVELS.reduce((sum, level) => sum + ((AppState.nonSalesData?.[AppState.currentForecast]?.[`Team ${team}`]?.pgLevels[level][month]) || 0), 0);
+                const selector = `#non-sales-headcount-subtab input[data-month="${month}"][data-group="${groupKey}"][data-team-id="${teamId}"]`;
+                const inputEl = document.querySelector(selector);
+                if (inputEl) inputEl.value = previousValue ?? 0;
+                const totalCell = document.getElementById(`ns-headcount-total-${groupKey}-${month}`);
+                if (totalCell && groupStore) {
+                    const total = (groupStore.teamOrder || Object.keys(groupStore.teams)).reduce((sum, id) => {
+                        const entry = groupStore.teams[id];
+                        return sum + (entry?.values?.[month] ?? 0);
+                    }, 0);
                     totalCell.textContent = total;
                 }
             });
@@ -2119,46 +2334,41 @@ function redo() {
       requestAnimationFrame(applyCell);
     });
 
-    // Persist this single-cell redo (shows up in Network)
-    bulk.push({
-      teamId: parseInt(team),
-      periodDate: getPeriodDate(month),
-      field: `pg${pg.substring(2)}_headcount`,
-      newValue: parseInt(newValue) || 0
-    });
-
   } else if (action.type === 'nonSalesHeadcountChange') {
-    const { team, pg, month, newValue } = action.data;
-    const teamKey = `Team ${team}`;
-    const nsData = AppState.nonSalesData?.[AppState.currentForecast]?.[teamKey];
-    if (nsData) {
-      nsData.pgLevels[pg][month] = parseInt(newValue) || 0;
-      const totalCell = document.getElementById(`ns-headcount-total-${month}`);
+    const { groupKey, teamId, month, newValue } = action.data;
+    const versionKey = AppState.currentForecast;
+    const groupStore = AppState.nonSalesData?.[versionKey]?.[groupKey];
+    if (groupStore && groupStore.teams?.[teamId]) {
+      if (!groupStore.teams[teamId].values) {
+        groupStore.teams[teamId].values = {};
+      }
+      groupStore.teams[teamId].values[month] = newValue ?? 0;
+      const totalCell = document.getElementById(`ns-headcount-total-${groupKey}-${month}`);
       if (totalCell) {
-        const total = PG_LEVELS.reduce((s, lvl) => s + (nsData.pgLevels[lvl][month] || 0), 0);
+        const total = (groupStore.teamOrder || Object.keys(groupStore.teams)).reduce((sum, id) => {
+          const entry = groupStore.teams[id];
+          return sum + (entry?.values?.[month] ?? 0);
+        }, 0);
         totalCell.textContent = total;
       }
     }
-    // Update input + change (without creating new undo)
-    const nsContainerId = 'non-sales-headcount-subtab';
-    const setNs = () => {
-      const input = document.querySelector(`#${nsContainerId} input[data-month="${month}"][data-pg="${pg}"][data-team="${team}"]`);
-      if (input) {
+    const applyValue = () => {
+      const selector = `#non-sales-headcount-subtab input[data-month="${month}"][data-group="${groupKey}"][data-team-id="${teamId}"]`;
+      const inputEl = document.querySelector(selector);
+      if (inputEl) {
         AppState.isProgrammaticChange = true;
-        input.value = parseInt(newValue) || 0;
-        input.dispatchEvent(new Event('change', { bubbles: true }));
+        inputEl.value = newValue ?? 0;
+        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
         AppState.isProgrammaticChange = false;
       }
     };
-    setNs();
-    requestAnimationFrame(() => requestAnimationFrame(setNs));
+    applyValue();
+    requestAnimationFrame(() => requestAnimationFrame(applyValue));
 
-    // Persist to non-sales endpoint
     bulk.push({
-      teamId: parseInt(team),
+      teamId: parseInt(teamId),
       periodDate: getPeriodDate(month),
-      field: `ns_pg${pg.substring(2)}_headcount`,
-      newValue: parseInt(newValue) || 0,
+      value: parseInt(newValue) || 0,
       _ns: true
     });
 
@@ -2296,8 +2506,7 @@ function redo() {
         teamId: u.teamId,
         periodDate: u.periodDate,
         versionId: AppState.currentVersion.version_id,
-        field: u.field,
-        value: u.newValue,
+        value: u.value ?? u.newValue ?? 0,
         updatedBy: AppState.currentUser
       }))));
     }
@@ -2531,30 +2740,97 @@ document.addEventListener('DOMContentLoaded', initializeApp);
 // Switch Sales/Non-Sales mini-tab
 function switchHeadcountSubtab(which) {
     if (which !== 'sales' && which !== 'non-sales') return;
-    // Save current before switching
+
+    const previousSubtab = AppState.headcountSubtab;
+
     const currentWrapper = getActiveWrapper();
     if (currentWrapper) {
         AppState.scrollPositions[getScrollKeyForState('headcount')] = currentWrapper.scrollLeft;
     }
+
+    if (previousSubtab === 'sales') {
+        AppState.lastSelectedTeams = AppState.lastSelectedTeams || { sales: AppState.currentTeam || 1, nonSales: AppState.currentNonSalesTeam || null };
+        if (Number.isFinite(AppState.currentTeam) && AppState.currentTeam < 9000) {
+            AppState.lastSelectedTeams.sales = AppState.currentTeam;
+        }
+    } else if (previousSubtab === 'non-sales') {
+        AppState.lastSelectedTeams = AppState.lastSelectedTeams || { sales: AppState.currentTeam || 1, nonSales: AppState.currentNonSalesTeam || null };
+        if (Number.isFinite(AppState.currentNonSalesTeam)) {
+            AppState.lastSelectedTeams.nonSales = AppState.currentNonSalesTeam;
+        }
+        AppState.lastSelectedGroups = AppState.lastSelectedGroups || { nonSales: null };
+        if (AppState.currentNonSalesGroup) {
+            AppState.lastSelectedGroups.nonSales = AppState.currentNonSalesGroup;
+        }
+    }
+
     AppState.headcountSubtab = which;
-    // Toggle active state on buttons
+
+    if (which === 'sales') {
+        AppState.teamCategory = 'sales';
+        AppState.isGroupView = false;
+        AppState.currentGroup = null;
+
+        AppState.lastSelectedTeams = AppState.lastSelectedTeams || { sales: AppState.currentTeam || 1, nonSales: AppState.currentNonSalesTeam || null };
+        if (!Number.isFinite(AppState.currentTeam) || AppState.currentTeam >= 9000) {
+            AppState.currentTeam = AppState.lastSelectedTeams.sales || 1;
+        }
+    } else {
+        AppState.teamCategory = 'non-sales';
+        AppState.isGroupView = false;
+        AppState.currentGroup = null;
+
+        AppState.lastSelectedGroups = AppState.lastSelectedGroups || { nonSales: null };
+        const fallbackGroup = NON_SALES_GROUPS.length ? NON_SALES_GROUPS[0].key : null;
+        if (!AppState.lastSelectedGroups.nonSales) {
+            AppState.lastSelectedGroups.nonSales = fallbackGroup;
+        }
+        const nextGroup = AppState.lastSelectedGroups.nonSales || fallbackGroup;
+        AppState.currentNonSalesGroup = nextGroup;
+
+        AppState.lastSelectedTeams = AppState.lastSelectedTeams || { sales: AppState.currentTeam || 1, nonSales: NON_SALES_TEAMS[0]?.team_id || null };
+        if (!AppState.lastSelectedTeams.nonSales && NON_SALES_TEAMS.length) {
+            AppState.lastSelectedTeams.nonSales = NON_SALES_TEAMS[0].team_id;
+        }
+        const fallbackTeam = NON_SALES_TEAMS[0]?.team_id || null;
+        if (!AppState.currentNonSalesTeam) {
+            AppState.currentNonSalesTeam = AppState.lastSelectedTeams.nonSales || fallbackTeam;
+        }
+        if (Number.isFinite(AppState.currentNonSalesTeam)) {
+            AppState.lastSelectedTeams.nonSales = AppState.currentNonSalesTeam;
+        }
+    }
+
     const salesBtn = document.getElementById('subtab-sales');
     const nsBtn = document.getElementById('subtab-non-sales');
     if (salesBtn && nsBtn) {
         salesBtn.classList.toggle('active', which === 'sales');
         nsBtn.classList.toggle('active', which === 'non-sales');
     }
-    // Toggle content visibility
+
     const salesC = document.getElementById('sales-headcount-subtab');
     const nsC = document.getElementById('non-sales-headcount-subtab');
     if (salesC && nsC) {
         salesC.style.display = which === 'sales' ? '' : 'none';
         nsC.style.display = which === 'non-sales' ? '' : 'none';
     }
-    // Re-render the tab's content to match selection
+
+    if (typeof initializeSidebar === 'function') {
+        initializeSidebar();
+    }
+    if (typeof window.highlightSidebarSelection === 'function') {
+        if (which === 'sales') {
+            window.highlightSidebarSelection(AppState.currentTeam);
+        } else {
+            window.highlightSidebarSelection(AppState.currentNonSalesTeam);
+        }
+    }
+    if (typeof window.updateCurrentTeamLabel === 'function') {
+        window.updateCurrentTeamLabel();
+    }
+
     if (AppState.currentTab === 'headcount') {
         renderCurrentTab();
-        // Restore after render
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 const wrapper = getActiveWrapper();
@@ -2567,7 +2843,6 @@ function switchHeadcountSubtab(which) {
     }
 }
 
-// Switch Production Investments/Banking mini-tab
 function updateProductionToolbarCaption(mode = AppState.productionSubtab) {
     const caption = document.querySelector('.production-toolbar-caption');
     if (!caption) return;
@@ -2625,66 +2900,81 @@ function switchProductionSubtab(which) {
 
 // Handle Non-Sales headcount changes (no cross-tab effects)
 async function handleNonSalesHeadcountChange(input) {
+    if (!input) {
+        return;
+    }
+
     const month = input.dataset.month;
-    const pg = input.dataset.pg;
-    const team = input.dataset.team;
+    const groupKey = input.dataset.group;
+    const teamId = parseInt(input.dataset.teamId, 10);
     const raw = (input.value || '').trim();
+
+    if (!month || !groupKey || !Number.isFinite(teamId)) {
+        input.classList.add('invalid-input');
+        return;
+    }
+
     if (raw === '' || raw === '-') {
         input.classList.add('invalid-input');
         return;
     }
+
+    const value = parseInt(raw, 10);
+    if (!Number.isFinite(value)) {
+        input.classList.add('invalid-input');
+        return;
+    }
+
     input.classList.remove('invalid-input');
-    const value = parseInt(raw, 10) || 0;
 
-    const teamKey = `Team ${team}`;
-    if (!AppState.nonSalesData[AppState.currentForecast]) {
-        AppState.nonSalesData[AppState.currentForecast] = {};
-    }
-    if (!AppState.nonSalesData[AppState.currentForecast][teamKey]) {
-        const months = generateMonthList();
-        const ns = { forecastStatus: {}, pgLevels: {} };
-        // Mirror current team's forecast status if available
-        const base = AppState.teamData[AppState.currentForecast]?.[teamKey];
-        ns.forecastStatus = base ? { ...base.forecastStatus } : {};
-        PG_LEVELS.forEach(p => { ns.pgLevels[p] = {}; months.forEach(m => ns.pgLevels[p][m] = 0); });
-        AppState.nonSalesData[AppState.currentForecast][teamKey] = ns;
+    const versionKey = AppState.currentForecast;
+    const groupStore = AppState.nonSalesData?.[versionKey]?.[groupKey];
+    if (!versionKey || !groupStore || !groupStore.teams || !groupStore.teams[teamId]) {
+        return;
     }
 
-    const nsData = AppState.nonSalesData[AppState.currentForecast][teamKey];
-    const previousValue = nsData.pgLevels[pg][month];
+    const teamStore = groupStore.teams[teamId];
+    const previousValue = teamStore.values?.[month] ?? 0;
 
     if (!AppState.isBulkPasting && !AppState.isProgrammaticChange) {
         AppState.undoStack.push({
             type: 'nonSalesHeadcountChange',
-            data: { team, pg, month, previousValue, newValue: value },
+            data: { groupKey, teamId, month, previousValue, newValue: value },
             context: { tab: 'headcount', subtab: 'non-sales' }
         });
         AppState.redoStack = [];
         updateUndoRedoButtons();
     }
-    
-    // Update local non-sales data only
-    nsData.pgLevels[pg][month] = value;
 
-    // Update total in the non-sales table
+    if (!teamStore.values) {
+        teamStore.values = {};
+    }
+    teamStore.values[month] = value;
+
+    if (Array.isArray(groupStore.teamOrder) && !groupStore.teamOrder.includes(teamId)) {
+        groupStore.teamOrder.push(teamId);
+    }
+
     try {
-        const totalCell = document.getElementById(`ns-headcount-total-${month}`);
+        const totalCell = document.getElementById(`ns-headcount-total-${groupKey}-${month}`);
         if (totalCell) {
-            const total = PG_LEVELS.reduce((sum, level) => sum + (nsData.pgLevels[level][month] || 0), 0);
+            const total = (groupStore.teamOrder || Object.keys(groupStore.teams)).reduce((sum, id) => {
+                const entry = groupStore.teams[id];
+                return sum + (entry?.values?.[month] ?? 0);
+            }, 0);
             totalCell.textContent = total;
         }
-    } catch {}
+    } catch (error) {
+        console.warn('Failed to update non-sales total cell', error);
+    }
 
-    // Persist to backend table for non-sales headcount
     if (!AppState.isBulkPasting && !AppState.isProgrammaticChange) {
         try {
-            const fieldName = `ns_pg${pg.substring(2)}_headcount`;
             await API.nonSales.updateData({
-                teamId: parseInt(team),
+                teamId,
                 periodDate: getPeriodDate(month),
                 versionId: AppState.currentVersion.version_id,
-                field: fieldName,
-                value: value,
+                value,
                 updatedBy: AppState.currentUser
             });
             showSaveIndicator();
@@ -2694,8 +2984,6 @@ async function handleNonSalesHeadcountChange(input) {
         }
     }
 }
-
-
 
 
 

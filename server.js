@@ -73,6 +73,14 @@ app.use((req, res, next) => {
 // Create database connection pools
 let actualsPool, forecastPool;
 
+const normalizeDateKey = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) return value.toISOString().slice(0, 10);
+    if (typeof value === 'string') return value.slice(0, 10);
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
+};
+
 async function initializeDatabases() {
     try {
         // Create connection pools
@@ -159,6 +167,35 @@ app.get('/api/team-data/:teamId/:versionId', async (req, res) => {
              ORDER BY fd.period_date`,
             [teamId, versionId, forecastStartDate, dateRange.end]
         );
+        if (forecastData.length) {
+            const periodDates = [...new Set(
+                forecastData
+                    .map(row => normalizeDateKey(row.period_date))
+                    .filter(Boolean)
+            )];
+
+            if (periodDates.length) {
+                const placeholders = periodDates.map(() => '?').join(', ');
+                const [calendarRows] = await actualsPool.query(
+                    `SELECT period_date, business_days FROM business_days_calendar WHERE period_date IN (${placeholders})`,
+                    periodDates
+                );
+                const businessDayMap = new Map(
+                    calendarRows.map(row => {
+                        const key = normalizeDateKey(row.period_date);
+                        return [key, row.business_days];
+                    })
+                );
+
+                forecastData.forEach(row => {
+                    const key = normalizeDateKey(row.period_date);
+                    if (key && businessDayMap.has(key)) {
+                        row.business_days = businessDayMap.get(key);
+                    }
+                });
+            }
+        }
+
         
         // Combine and format data
         const combinedData = [
@@ -286,6 +323,35 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
              ORDER BY period_date`,
             [versionId, forecastStartDate, dateRange.end]
         );
+        if (forecastData.length) {
+            const periodDates = [...new Set(
+                forecastData
+                    .map(row => normalizeDateKey(row.period_date))
+                    .filter(Boolean)
+            )];
+
+            if (periodDates.length) {
+                const placeholders = periodDates.map(() => '?').join(', ');
+                const [calendarRows] = await actualsPool.query(
+                    `SELECT period_date, business_days FROM business_days_calendar WHERE period_date IN (${placeholders})`,
+                    periodDates
+                );
+                const businessDayMap = new Map(
+                    calendarRows.map(row => {
+                        const key = normalizeDateKey(row.period_date);
+                        return [key, row.business_days];
+                    })
+                );
+
+                forecastData.forEach(row => {
+                    const key = normalizeDateKey(row.period_date);
+                    if (key && businessDayMap.has(key)) {
+                        row.business_days = businessDayMap.get(key);
+                    }
+                });
+            }
+        }
+
         
         // Combine data
         const combinedData = [...actualsData, ...forecastData];

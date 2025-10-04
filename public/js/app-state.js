@@ -91,16 +91,6 @@
             ]
         },
         {
-            key: 'human-resources',
-            displayName: 'Human Resources',
-            teams: [
-                { team_id: 9221, team_name: 'Team 1', group_name: 'human-resources', group_display_name: 'Human Resources', team_category: 'non-sales' },
-                { team_id: 9222, team_name: 'Team 2', group_name: 'human-resources', group_display_name: 'Human Resources', team_category: 'non-sales' },
-                { team_id: 9223, team_name: 'Team 3', group_name: 'human-resources', group_display_name: 'Human Resources', team_category: 'non-sales' },
-                { team_id: 9224, team_name: 'Team 4', group_name: 'human-resources', group_display_name: 'Human Resources', team_category: 'non-sales' }
-            ]
-        },
-        {
             key: 'real-estate',
             displayName: 'Real Estate',
             teams: [
@@ -108,6 +98,16 @@
                 { team_id: 9232, team_name: 'Team 2', group_name: 'real-estate', group_display_name: 'Real Estate', team_category: 'non-sales' },
                 { team_id: 9233, team_name: 'Team 3', group_name: 'real-estate', group_display_name: 'Real Estate', team_category: 'non-sales' },
                 { team_id: 9234, team_name: 'Team 4', group_name: 'real-estate', group_display_name: 'Real Estate', team_category: 'non-sales' }
+            ]
+        },
+        {
+            key: 'hr',
+            displayName: 'HR',
+            teams: [
+                { team_id: 9221, team_name: 'Team 1', group_name: 'hr', group_display_name: 'HR', team_category: 'non-sales' },
+                { team_id: 9222, team_name: 'Team 2', group_name: 'hr', group_display_name: 'HR', team_category: 'non-sales' },
+                { team_id: 9223, team_name: 'Team 3', group_name: 'hr', group_display_name: 'HR', team_category: 'non-sales' },
+                { team_id: 9224, team_name: 'Team 4', group_name: 'hr', group_display_name: 'HR', team_category: 'non-sales' }
             ]
         }
     ];

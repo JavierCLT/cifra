@@ -241,6 +241,127 @@ function renderHeadcountTab(data, opts = {}) {
     setupInputSelection();
 }
 
+function renderNonSalesHeadcountTab(groupData, opts = {}) {
+    const containerId = opts.containerId || 'non-sales-headcount-subtab';
+    const container = document.getElementById(containerId);
+    if (!container) {
+        return;
+    }
+    if (!groupData || !groupData.teams) {
+        container.innerHTML = '<div class="loading">Non-sales data unavailable...</div>';
+        return;
+    }
+
+    const months = generateMonthList();
+    const statusMap = groupData.forecastStatus || {};
+    const groupKey = groupData.groupKey || AppState.currentNonSalesGroup || 'non-sales';
+    const allowEditing = !AppState.isGroupView && AppState.currentVersion && AppState.currentVersion.version_id === 2;
+
+    const teamOrder = Array.isArray(groupData.teamOrder) && groupData.teamOrder.length
+        ? groupData.teamOrder
+        : Object.keys(groupData.teams);
+    const teams = teamOrder
+        .map(teamId => groupData.teams[teamId])
+        .filter(Boolean);
+
+    if (!teams.length) {
+        container.innerHTML = '<div class="loading">No teams configured for this non-sales group.</div>';
+        return;
+    }
+
+    const totalsByMonth = months.reduce((acc, month) => {
+        acc[month] = 0;
+        return acc;
+    }, {});
+
+    let html = '<div class="data-table-wrapper"><table class="data-table">';
+
+    html += '<thead><tr><th rowspan="2">Team</th>';
+    months.forEach((month, idx) => {
+        const isForecast = statusMap[month] === 'Forecast';
+        const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
+        html += `<th class="${isForecast ? 'forecast-col' : 'actual-col'}">${businessDays}</th>`;
+    });
+    QUARTERS.forEach(() => {
+        html += '<th class="quarter-col">Avg</th>';
+    });
+    YEARS.forEach(() => {
+        html += '<th class="year-total-col">Avg</th>';
+    });
+    html += '</tr><tr>';
+    months.forEach(month => {
+        const isForecast = statusMap[month] === 'Forecast';
+        html += `<th class="${isForecast ? 'forecast-col' : 'actual-col'}">${month}</th>`;
+    });
+    QUARTERS.forEach(quarter => {
+        html += `<th class="quarter-col">${quarter}</th>`;
+    });
+    YEARS.forEach(year => {
+        html += `<th class="year-total-col">FY${year.slice(-2)}</th>`;
+    });
+    html += '</tr></thead><tbody>';
+
+    teams.forEach(team => {
+        const values = team.values || {};
+        html += `<tr><td>${team.teamName || team.team_name || team.teamId}</td>`;
+        months.forEach(month => {
+            const value = values[month] ?? 0;
+            totalsByMonth[month] += value;
+            const isForecast = statusMap[month] === 'Forecast';
+            if (isForecast && allowEditing) {
+                html += `<td class="forecast-col">
+                    <input type="number"
+                           value="${value}"
+                           data-month="${month}"
+                           data-group="${groupKey}"
+                           data-team-id="${team.teamId || team.team_id}"
+                           data-team-name="${team.teamName || team.team_name || ''}"
+                           data-metric="headcount"
+                           class="selectable-input"
+                           onchange="handleNonSalesHeadcountChange(this)">
+                </td>`;
+            } else {
+                html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}">${value}</td>`;
+            }
+        });
+
+        QUARTERS.forEach(quarter => {
+            const avg = calculateQuarterAverage(values, quarter);
+            html += `<td class="quarter-col">${avg}</td>`;
+        });
+
+        YEARS.forEach(year => {
+            const avg = calculateYearAverage(values, months, year);
+            html += `<td class="year-total-col">${avg}</td>`;
+        });
+
+        html += '</tr>';
+    });
+
+    html += '<tr class="total-row"><td>Total Non-Sales Headcount</td>';
+    months.forEach(month => {
+        const isForecast = statusMap[month] === 'Forecast';
+        html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}" id="ns-headcount-total-${groupKey}-${month}">${totalsByMonth[month]}</td>`;
+    });
+
+    QUARTERS.forEach(quarter => {
+        const quarterMonths = getMonthsInQuarter(quarter);
+        const values = quarterMonths.map(month => totalsByMonth[month] || 0);
+        const avg = values.length ? Math.round(values.reduce((sum, val) => sum + val, 0) / values.length) : 0;
+        html += `<td class="quarter-col">${avg}</td>`;
+    });
+
+    YEARS.forEach(year => {
+        const yearMonths = months.filter(month => getYearFromMonth(month) === year);
+        const values = yearMonths.map(month => totalsByMonth[month] || 0);
+        const avg = values.length ? Math.round(values.reduce((sum, val) => sum + val, 0) / values.length) : 0;
+        html += `<td class="year-total-col" id="ns-headcount-year-avg-${groupKey}-${year}">${avg}</td>`;
+    });
+
+    html += '</tr></tbody></table></div>';
+    container.innerHTML = html;
+    setupInputSelection();
+}
 // Render production tab
 function renderProductionBaselineColumn(data, months) {
     if (AppState.isGroupView) return '';

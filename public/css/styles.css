@@ -394,7 +394,7 @@ body {
 
 .data-table th,
 .data-table td {
-    padding: 10px;
+    padding: 6px 10px;
     text-align: right;
     border-right: 1px solid #ddd;
     border-bottom: 1px solid #ddd;

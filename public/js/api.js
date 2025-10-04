@@ -158,8 +158,17 @@ const API = {
 
 // Non-Sales Headcount API
 API.nonSales = {
-    async getActualsTeam(teamId) {
-        const result = await API.request(`/non-sales/actuals/team/${teamId}`);
+    async getGroup(groupKey, versionId) {
+        if (!groupKey) {
+            throw new Error('groupKey is required to fetch non-sales data');
+        }
+        const query = new URLSearchParams();
+        if (versionId != null) {
+            query.append('versionId', versionId);
+        }
+        const suffix = query.toString();
+        const endpoint = `/non-sales/group/${groupKey}${suffix ? `?${suffix}` : ''}`;
+        const result = await API.request(endpoint);
         return result.data;
     },
     async updateData(data) {
@@ -167,11 +176,6 @@ API.nonSales = {
             method: 'PUT',
             body: JSON.stringify(data)
         });
-    },
-    async getTeam(teamId, versionId) {
-        const params = new URLSearchParams();
-        if (versionId) params.append('versionId', versionId);
-        const result = await API.request(`/non-sales/team/${teamId}?${params}`);
-        return result.data;
     }
 };
+

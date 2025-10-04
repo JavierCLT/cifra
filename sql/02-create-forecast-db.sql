@@ -61,6 +61,7 @@ CREATE TABLE `forecast_data` (
   `team_id` int NOT NULL,
   `period_date` date NOT NULL,
   `version_id` int NOT NULL,
+  `headcount` int DEFAULT '0',
   `pg1_headcount` int DEFAULT '0',
   `pg2_headcount` int DEFAULT '0',
   `pg3_headcount` int DEFAULT '0',
@@ -125,6 +126,7 @@ DROP TABLE IF EXISTS `forecast_locks`;
 CREATE TABLE `forecast_locks` (
   `lock_id` int NOT NULL AUTO_INCREMENT,
   `version_id` int NOT NULL,
+  `headcount` int DEFAULT '0',
   `team_id` int DEFAULT NULL,
   `period_start` date DEFAULT NULL,
   `period_end` date DEFAULT NULL,
@@ -156,6 +158,7 @@ DROP TABLE IF EXISTS `forecast_notes`;
 CREATE TABLE `forecast_notes` (
   `note_id` int NOT NULL AUTO_INCREMENT,
   `version_id` int NOT NULL,
+  `headcount` int DEFAULT '0',
   `team_id` int DEFAULT NULL,
   `period_date` date DEFAULT NULL,
   `note_type` enum('assumption','adjustment','review','general') DEFAULT 'general',
@@ -209,13 +212,7 @@ CREATE TABLE `forecast_non_sales_headcount` (
   `team_id` int NOT NULL,
   `period_date` date NOT NULL,
   `version_id` int NOT NULL,
-  `ns_pg1_headcount` int DEFAULT '0',
-  `ns_pg2_headcount` int DEFAULT '0',
-  `ns_pg3_headcount` int DEFAULT '0',
-  `ns_pg4_headcount` int DEFAULT '0',
-  `ns_pg5_headcount` int DEFAULT '0',
-  `ns_pg6_headcount` int DEFAULT '0',
-  `ns_pg7_headcount` int DEFAULT '0',
+  `headcount` int DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_by` varchar(100) DEFAULT NULL,
@@ -277,6 +274,7 @@ CREATE TABLE `incentive_calculations` (
   `team_id` int NOT NULL,
   `period_date` date NOT NULL,
   `version_id` int NOT NULL,
+  `headcount` int DEFAULT '0',
   `raw_investment_accounts` int DEFAULT '0',
   `raw_investment_assets` decimal(15,2) DEFAULT '0.00',
   `raw_banking_accounts` int DEFAULT '0',
@@ -366,6 +364,7 @@ CREATE TABLE `incentive_quality_ratios` (
   `ratio_value` decimal(5,4) NOT NULL,
   `period_date` date NOT NULL,
   `version_id` int NOT NULL,
+  `headcount` int DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_by` varchar(100) DEFAULT NULL,
@@ -401,6 +400,7 @@ CREATE TABLE `incentive_quality_ratios_backup_migration` (
   `ratio_value` decimal(5,4) NOT NULL,
   `period_date` date NOT NULL,
   `version_id` int NOT NULL,
+  `headcount` int DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `updated_by` varchar(100) DEFAULT NULL
@@ -1138,3 +1138,5 @@ DELIMITER ;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
 -- Dump completed on 2025-07-14 11:18:41
+
+

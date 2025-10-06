@@ -49,16 +49,12 @@
 
     const PG_LEVELS = ['PG1', 'PG2', 'PG3', 'PG4', 'PG5', 'PG6', 'PG7'];
     const HEADCOUNT_FLOW_ROWS = [
-        { key: 'starting_headcount', label: 'Starting Headcount' },
-        { key: 'external_hires', label: 'External Hires' },
-        { key: 'progressions_in', label: 'Progressions In' },
-        { key: 'transfers_in', label: 'Transfers In' },
-        { key: 'mfsa_progressions_out', label: 'MFSA Progressions Out' },
-        { key: 'sfsa_progressions_out', label: 'SFSA Progressions Out' },
-        { key: 'other_progressions_out', label: 'Other Progressions Out' },
-        { key: 'transfers_out', label: 'Transfers Out' },
-        { key: 'attrition', label: 'Attrition' },
-        { key: 'loa', label: 'LOA' },
+        { key: 'starting_headcount', label: 'Starting Headcount', isStarting: true },
+        { key: 'flow_1', label: 'Flow 1' },
+        { key: 'flow_2', label: 'Flow 2' },
+        { key: 'flow_3', label: 'Flow 3' },
+        { key: 'flow_4', label: 'Flow 4' },
+        { key: 'flow_5', label: 'Flow 5' },
         { key: 'ending_headcount', label: 'Ending Headcount', isCalculated: true }
     ];
 

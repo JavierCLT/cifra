@@ -115,7 +115,7 @@ if (!AppState.lastSelectedTeams.nonSales && NON_SALES_TEAMS.length) {
 }
 AppState.currentNonSalesTeam = AppState.currentNonSalesTeam || AppState.lastSelectedTeams.nonSales || null;
 
-if (!AppState.lastSelectedGroups || typeof AppState.lastSelectedGroups !== "object") {
+if (!AppState.lastSelectedGroups || typeof AppState.lastSelectedGroups !== 'object') {
     AppState.lastSelectedGroups = { nonSales: null };
 }
 if (!AppState.lastSelectedGroups.nonSales) {
@@ -123,7 +123,7 @@ if (!AppState.lastSelectedGroups.nonSales) {
 }
 AppState.currentNonSalesGroup = AppState.currentNonSalesGroup || AppState.lastSelectedGroups.nonSales;
 
-if (!AppState.lastSelectedTeams || typeof AppState.lastSelectedTeams !== "object") {
+if (!AppState.lastSelectedTeams || typeof AppState.lastSelectedTeams !== 'object') {
     AppState.lastSelectedTeams = { sales: AppState.currentTeam || 1, nonSales: NON_SALES_TEAMS[0]?.team_id || null };
 }
 if (!AppState.lastSelectedTeams.nonSales && NON_SALES_TEAMS.length) {
@@ -400,15 +400,15 @@ function rowMatchesMetric(rowEl, metricKey) {
         case 'headcount':
             return !!rowEl.querySelector('input[data-pg]');
         case 'productivity':
-            return !!rowEl.querySelector('input[data-metric="productivity"]');
+            return !!rowEl.querySelector("input[data-metric='productivity']");
         case 'mix':
-            return !!rowEl.querySelector('input[data-metric="mix"]');
+            return !!rowEl.querySelector("input[data-metric='mix']");
         case 'abpa':
-            return !!rowEl.querySelector('input[data-metric="abpa"]');
+            return !!rowEl.querySelector("input[data-metric='abpa']");
         case 'additional-productivity':
-            return !!rowEl.querySelector('input[data-metric="additional-productivity"]');
+            return !!rowEl.querySelector("input[data-metric='additional-productivity']");
         case 'additional-abpa':
-            return !!rowEl.querySelector('input[data-metric="additional-abpa"]');
+            return !!rowEl.querySelector("input[data-metric='additional-abpa']");
         default:
             return false;
     }
@@ -419,15 +419,15 @@ function getInputsForRowByMetric(rowEl, metricKey) {
         case 'headcount':
             return Array.from(rowEl.querySelectorAll('input[data-pg]'));
         case 'productivity':
-            return Array.from(rowEl.querySelectorAll('input[data-metric="productivity"]'));
+            return Array.from(rowEl.querySelectorAll("input[data-metric='productivity']"));
         case 'mix':
-            return Array.from(rowEl.querySelectorAll('input[data-metric="mix"]'));
+            return Array.from(rowEl.querySelectorAll("input[data-metric='mix']"));
         case 'abpa':
-            return Array.from(rowEl.querySelectorAll('input[data-metric="abpa"]'));
+            return Array.from(rowEl.querySelectorAll("input[data-metric='abpa']"));
         case 'additional-productivity':
-            return Array.from(rowEl.querySelectorAll('input[data-metric="additional-productivity"]'));
+            return Array.from(rowEl.querySelectorAll("input[data-metric='additional-productivity']"));
         case 'additional-abpa':
-            return Array.from(rowEl.querySelectorAll('input[data-metric="additional-abpa"]'));
+            return Array.from(rowEl.querySelectorAll("input[data-metric='additional-abpa']"));
         default:
             return [];
     }
@@ -777,7 +777,7 @@ function selectAllVisibleCells() {
     const currentTabElement = document.querySelector('.tab-content.active');
     if (currentTabElement) {
         const selectableCells = currentTabElement.querySelectorAll(
-            'td.actual-col, td.forecast-col, .selectable-input, input[type="number"]'
+            "td.actual-col, td.forecast-col, .selectable-input, input[type='number']"
         );
         
         selectableCells.forEach(cell => {
@@ -804,7 +804,7 @@ function initializeSidebar() {
             const header = document.createElement('div');
             header.className = 'group-header group-header--static';
             header.dataset.groupKey = group.key;
-            header.innerHTML = '<span class="group-name">' + group.displayName + '</span>';
+            header.innerHTML = "<span class='group-name'>" + group.displayName + "</span>";
             if (group.key === AppState.currentNonSalesGroup) {
                 header.classList.add('active');
             }
@@ -835,7 +835,7 @@ function initializeSidebar() {
         const groupHeader = document.createElement('div');
         groupHeader.className = 'group-header';
         groupHeader.dataset.groupKey = groupName;
-        groupHeader.innerHTML = '<span class="group-name">' + groupData.displayName + '</span><span class="arrow">&#9662;</span>';
+        groupHeader.innerHTML = "<span class='group-name'>" + groupData.displayName + "</span><span class='arrow'>&#9662;</span>";
         groupHeader.addEventListener('click', (event) => {
             event.preventDefault();
             if (event.target.closest('.arrow')) {
@@ -1113,6 +1113,15 @@ async function getGroupData(groupName) {
 function transformApiData(apiData) {
     const transformed = {
         forecastStatus: {},
+        headcountFlows: {
+            starting_headcount: {},
+            flow_1: {},
+            flow_2: {},
+            flow_3: {},
+            flow_4: {},
+            flow_5: {},
+            ending_headcount: {}
+        },
         pgLevels: {
             PG1: {}, PG2: {}, PG3: {}, PG4: {}, PG5: {}, PG6: {}, PG7: {}
         },
@@ -1126,7 +1135,7 @@ function transformApiData(apiData) {
         // Add structure for additional products
         additionalProducts: {}
     };
-    
+
     // Initialize additional products
     ADDITIONAL_PRODUCTS.forEach(product => {
         transformed.additionalProducts[product] = {
@@ -1134,20 +1143,27 @@ function transformApiData(apiData) {
             abpa: {}
         };
     });
-    
+
     // Extract business days for global use
     const businessDaysMap = {};
     apiData.forEach(row => {
         businessDaysMap[row.period_string] = row.business_days;
     });
     window.BUSINESS_DAYS = Object.values(businessDaysMap);
-    
+
+    const flowKeys = ['starting_headcount', 'flow_1', 'flow_2', 'flow_3', 'flow_4', 'flow_5', 'ending_headcount'];
+
     // Transform data
     apiData.forEach(row => {
         const period = row.period_string;
-        
+
         transformed.forecastStatus[period] = row.data_type === 'forecast' ? 'Forecast' : 'Actual';
-        
+
+        flowKeys.forEach(key => {
+            const value = Number(row[key] ?? 0);
+            transformed.headcountFlows[key][period] = Number.isFinite(value) ? value : 0;
+        });
+
         // ENSURE ALL HEADCOUNT VALUES ARE NUMBERS
         transformed.pgLevels.PG1[period] = parseInt(row.pg1_headcount) || 0;
         transformed.pgLevels.PG2[period] = parseInt(row.pg2_headcount) || 0;
@@ -1156,30 +1172,31 @@ function transformApiData(apiData) {
         transformed.pgLevels.PG5[period] = parseInt(row.pg5_headcount) || 0;
         transformed.pgLevels.PG6[period] = parseInt(row.pg6_headcount) || 0;
         transformed.pgLevels.PG7[period] = parseInt(row.pg7_headcount) || 0;
-        
+
         // ENSURE PRODUCTIVITY IS ALWAYS 2 DECIMALS
         transformed.productivity[period] = parseFloat(row.productivity || 0).toFixed(2);
-        
+
         transformed.productMix['Product A'][period] = parseFloat(row.product_a_mix) || 0;
         transformed.productMix['Product B'][period] = parseFloat(row.product_b_mix) || 0;
         transformed.productMix['Product C'][period] = parseFloat(row.product_c_mix) || 0;
         transformed.productMix['Product D'][period] = parseFloat(row.product_d_mix) || 0;
-        
+
         transformed.abpa['Product A'][period] = Math.round(parseFloat(row.product_a_abpa) || 0);
         transformed.abpa['Product B'][period] = Math.round(parseFloat(row.product_b_abpa) || 0);
         transformed.abpa['Product C'][period] = Math.round(parseFloat(row.product_c_abpa) || 0);
         transformed.abpa['Product D'][period] = Math.round(parseFloat(row.product_d_abpa) || 0);
-        
+
         // Transform additional products
         ADDITIONAL_PRODUCTS.forEach(product => {
             const prodLower = product.toLowerCase();
-            transformed.additionalProducts[product].productivity[period] = 
-                parseFloat(row[`product_${prodLower}_productivity`] || 0).toFixed(2);
-            transformed.additionalProducts[product].abpa[period] = 
-                Math.round(parseFloat(row[`product_${prodLower}_abpa`] || 0));
+            const prodKey = 'product_' + prodLower;
+            transformed.additionalProducts[product].productivity[period] =
+                parseFloat(row[prodKey + '_productivity'] || 0).toFixed(2);
+            transformed.additionalProducts[product].abpa[period] =
+                Math.round(parseFloat(row[prodKey + '_abpa'] || 0));
         });
     });
-    
+
     return transformed;
 }
 function monthLabelFromDate(periodDate) {
@@ -1336,7 +1353,7 @@ async function switchToGroup(groupName) {
     });
     
     document.getElementById('currentTeamDisplay').innerHTML = 
-        `Group ${groupName} <span class="group-view-indicator">Read Only</span>`;
+        `Group ${groupName} <span class='group-view-indicator'>Read Only</span>`;
     
     // Render the group data
     renderCurrentTab();
@@ -1417,9 +1434,14 @@ function switchTab(tabName) {
     document.getElementById(`${tabName}-tab`).classList.add('active');
 
     // Show/minimize headcount mini-tabs based on active tab
+    const headcountToolbar = document.getElementById('headcount-toolbar');
+    if (headcountToolbar) {
+        headcountToolbar.style.display = (tabName === 'headcount') ? 'flex' : 'none';
+    }
+
     const hcSubtabs = document.getElementById('headcount-subtabs');
     if (hcSubtabs) {
-        hcSubtabs.style.display = (tabName === 'headcount') ? 'flex' : 'none';
+        hcSubtabs.style.display = (tabName === 'headcount') ? 'inline-flex' : 'none';
         // Ensure content panes visibility aligns with selected subtab
         const salesC = document.getElementById('sales-headcount-subtab');
         const nsC = document.getElementById('non-sales-headcount-subtab');
@@ -1427,6 +1449,11 @@ function switchTab(tabName) {
             if (AppState.headcountSubtab === 'sales') { if (salesC) salesC.style.display=''; if (nsC) nsC.style.display='none'; }
             else { if (salesC) salesC.style.display='none'; if (nsC) nsC.style.display=''; }
         }
+    }
+
+    const headcountAdminButton = document.getElementById('headcount-admin-btn');
+    if (headcountAdminButton && tabName !== 'headcount') {
+        headcountAdminButton.style.display = 'none';
     }
 
     // Show/minimize production mini-tabs based on active tab
@@ -1481,7 +1508,18 @@ async function renderCurrentTab() {
     if (AppState.currentTab === 'headcount') {
         const subtabs = document.getElementById('headcount-subtabs');
         if (subtabs) {
-            subtabs.style.display = 'flex';
+            subtabs.style.display = 'inline-flex';
+        }
+
+        const toolbar = document.getElementById('headcount-toolbar');
+        if (toolbar) {
+            toolbar.style.display = 'flex';
+        }
+
+        const adminBtn = document.getElementById('headcount-admin-btn');
+        if (adminBtn) {
+            const shouldShowAdmin = AppState.headcountSubtab === 'sales' && !AppState.isGroupView;
+            adminBtn.style.display = shouldShowAdmin ? '' : 'none';
         }
 
         if (AppState.headcountSubtab === 'non-sales') {
@@ -1507,7 +1545,7 @@ async function renderCurrentTab() {
             const groupKey = AppState.currentNonSalesGroup || (NON_SALES_GROUPS.length ? NON_SALES_GROUPS[0].key : null);
             if (!groupKey) {
                 if (nsContainer) {
-                    nsContainer.innerHTML = '<div class="loading">No non-sales groups configured.</div>';
+                    nsContainer.innerHTML = "<div class='loading'>No non-sales groups configured.</div>";
                 }
                 return;
             }
@@ -1519,7 +1557,7 @@ async function renderCurrentTab() {
             const forecastKey = AppState.currentForecast;
             if (!forecastKey) {
                 if (nsContainer) {
-                    nsContainer.innerHTML = '<div class="loading">Select a forecast version to view non-sales headcount.</div>';
+                    nsContainer.innerHTML = "<div class='loading'>Select a forecast version to view non-sales headcount.</div>";
                 }
                 return;
             }
@@ -1538,7 +1576,7 @@ async function renderCurrentTab() {
                 } catch (error) {
                     console.error('Failed to load non-sales data:', error);
                     if (nsContainer) {
-                        nsContainer.innerHTML = '<div class="loading">Failed to load non-sales data.</div>';
+                        nsContainer.innerHTML = "<div class='loading'>Failed to load non-sales data.</div>";
                     }
                     return;
                 }
@@ -1547,7 +1585,7 @@ async function renderCurrentTab() {
             const nsGroupData = AppState.nonSalesData[forecastKey][groupKey];
             if (!nsGroupData) {
                 if (nsContainer) {
-                    nsContainer.innerHTML = '<div class="loading">Non-sales data unavailable.</div>';
+                    nsContainer.innerHTML = "<div class='loading'>Non-sales data unavailable.</div>";
                 }
                 return;
             }
@@ -1589,7 +1627,7 @@ async function renderCurrentTab() {
         const forecastKey = AppState.currentForecast;
         if (!forecastKey) {
             if (salesContainer) {
-                salesContainer.innerHTML = '<div class="loading">Select a forecast version to view sales headcount.</div>';
+                salesContainer.innerHTML = "<div class='loading'>Select a forecast version to view sales headcount.</div>";
             }
             return;
         }
@@ -1676,21 +1714,52 @@ async function renderCurrentTab() {
 
 // Handle headcount changes
 async function handleHeadcountChange(input) {
+    if (!input) {
+        return;
+    }
     const month = input.dataset.month;
     const pg = input.dataset.pg;
     const team = input.dataset.team;
     const raw = (input.value || '').trim();
+
+    if (!month || !pg || !team) {
+        return;
+    }
+
     if (raw === '' || raw === '-') {
         input.classList.add('invalid-input');
         return;
     }
-    input.classList.remove('invalid-input');
-    const value = parseInt(raw, 10) || 0;
-    
-    // Save for undo
+
+    const forecastKey = AppState.currentForecast;
     const teamKey = `Team ${team}`;
-    const previousValue = AppState.teamData[AppState.currentForecast][teamKey].pgLevels[pg][month];
-    
+    const teamStore = AppState.teamData?.[forecastKey]?.[teamKey];
+    if (!teamStore || !teamStore.pgLevels?.[pg]) {
+        return;
+    }
+
+    const previousValue = Number(teamStore.pgLevels[pg][month] ?? 0);
+    const parsedValue = parseInt(raw, 10);
+    const value = Number.isFinite(parsedValue) ? parsedValue : 0;
+
+    const ending = Number(teamStore.headcountFlows?.ending_headcount?.[month]);
+    if (Number.isFinite(ending) && ending >= 0) {
+        const pgLevels = teamStore.pgLevels || {};
+        let total = 0;
+        Object.keys(pgLevels).forEach(key => {
+            const current = Number(pgLevels[key]?.[month] ?? 0);
+            total += key === pg ? value : current;
+        });
+        if (total > ending) {
+            input.value = previousValue;
+            input.classList.add('invalid-input');
+            showError(`Total productive headcount (${total}) cannot exceed ending headcount (${ending}).`);
+            return;
+        }
+    }
+
+    input.classList.remove('invalid-input');
+
     if (!AppState.isBulkPasting && !AppState.isProgrammaticChange) {
         AppState.undoStack.push({
             type: 'headcountChange',
@@ -1700,15 +1769,11 @@ async function handleHeadcountChange(input) {
         AppState.redoStack = [];
         updateUndoRedoButtons();
     }
-    
-    // Update local data
-    AppState.teamData[AppState.currentForecast][teamKey].pgLevels[pg][month] = value;
-    
-    // Update displays
+
+    teamStore.pgLevels[pg][month] = value;
     updateHeadcountTotals(team, month);
     updateProductionCalculations(team, month);
-    
-    // Update database (skip when bulk pasting; handled by bulkUpdate)
+
     if (!AppState.isBulkPasting && !AppState.isProgrammaticChange) {
         try {
             const fieldName = `pg${pg.substring(2)}_headcount`;
@@ -1717,10 +1782,10 @@ async function handleHeadcountChange(input) {
                 periodDate: getPeriodDate(month),
                 versionId: AppState.currentVersion.version_id,
                 field: fieldName,
-                value: value,
+                value,
                 updatedBy: AppState.currentUser
             });
-            
+
             showSaveIndicator();
         } catch (error) {
             console.error('Failed to save change:', error);
@@ -1729,7 +1794,6 @@ async function handleHeadcountChange(input) {
     }
 }
 
-// Handle production changes
 async function handleProductionChange(input) {
     if (!input) return;
 
@@ -1971,7 +2035,7 @@ function updateAdditionalProductCalculations(team, month, product) {
         if (inputEl) {
             inputEl.value = String(Math.round(abpa / 1000));
         } else {
-            abpaCell.innerHTML = `${formatThousands(abpa, 0)}<span class="table-value-suffix">K</span>`;
+            abpaCell.innerHTML = `${formatThousands(abpa, 0)}<span class='table-value-suffix'>K</span>`;
         }
     }
 
@@ -2018,7 +2082,7 @@ function undo() {
         AppState.teamData[AppState.currentForecast][`Team ${team}`].pgLevels[pg][month] = previousValue;
         const setValUndo = () => {
             const containerId = AppState.headcountSubtab === 'non-sales' ? 'non-sales-headcount-subtab' : 'sales-headcount-subtab';
-            const input = document.querySelector(`#${containerId} input[data-month="${month}"][data-pg="${pg}"][data-team="${team}"]`);
+            const input = document.querySelector(`#${containerId} input[data-month='${month}'][data-pg='${pg}'][data-team='${team}']`);
             if (input) input.value = parseInt(previousValue) || 0;
             updateHeadcountTotals(team, month);
             updateProductionCalculations(team, month);
@@ -2045,7 +2109,7 @@ function undo() {
         requestAnimationFrame(() => {
             renderCurrentTab();
             requestAnimationFrame(() => {
-                const selector = `#non-sales-headcount-subtab input[data-month="${month}"][data-group="${groupKey}"][data-team-id="${teamId}"]`;
+                const selector = `#non-sales-headcount-subtab input[data-month='${month}'][data-group='${groupKey}'][data-team-id='${teamId}']`;
                 const inputEl = document.querySelector(selector);
                 if (inputEl) inputEl.value = previousValue ?? 0;
                 const totalCell = document.getElementById(`ns-headcount-total-${groupKey}-${month}`);
@@ -2065,17 +2129,17 @@ function undo() {
         if (metric === 'productivity') {
             AppState.teamData[AppState.currentForecast][teamKey].productivity[month] = parseFloat(previousValue).toFixed(2);
             // Update the input directly
-            const input = document.querySelector(`input[data-month="${month}"][data-metric="productivity"][data-team="${team}"]`);
+            const input = document.querySelector(`input[data-month='${month}'][data-metric='productivity'][data-team='${team}']`);
             if (input) input.value = parseFloat(previousValue).toFixed(2);
         } else if (metric === 'mix') {
             AppState.teamData[AppState.currentForecast][teamKey].productMix[product][month] = previousValue / 100;
             // Update the input directly
-            const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="mix"][data-team="${team}"]`);
+            const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='mix'][data-team='${team}']`);
             if (input) input.value = previousValue;
         } else if (metric === 'abpa') {
             AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month] = previousValue;
             // Update the input directly
-            const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="abpa"][data-team="${team}"]`);
+            const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='abpa'][data-team='${team}']`);
             if (input) input.value = String(Math.round((previousValue || 0) / 1000));
         }
         
@@ -2088,13 +2152,13 @@ function undo() {
             AppState.teamData[AppState.currentForecast][teamKey]
                 .additionalProducts[product].productivity[month] = parseFloat(previousValue).toFixed(2);
             // Update the input directly
-            const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-productivity"][data-team="${team}"]`);
+            const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-productivity'][data-team='${team}']`);
             if (input) input.value = parseFloat(previousValue).toFixed(2);
         } else if (metric === 'additional-abpa') {
             AppState.teamData[AppState.currentForecast][teamKey]
                 .additionalProducts[product].abpa[month] = parseInt(previousValue);
             // Update the input directly
-            const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${team}"]`);
+            const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-abpa'][data-team='${team}']`);
             if (input) input.value = String(Math.round((previousValue || 0) / 1000));
         }
         
@@ -2105,25 +2169,25 @@ function undo() {
             
             if (state.metric === 'productivity') {
                 AppState.teamData[AppState.currentForecast][teamKey].productivity[state.month] = parseFloat(state.previousValue).toFixed(2);
-                const input = document.querySelector(`input[data-month="${state.month}"][data-metric="productivity"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${state.month}'][data-metric='productivity'][data-team='${state.team}']`);
                 if (input) input.value = parseFloat(state.previousValue).toFixed(2);
             } else if (state.metric === 'mix') {
                 AppState.teamData[AppState.currentForecast][teamKey].productMix[state.product][state.month] = parseFloat(state.previousValue) / 100;
-                const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="mix"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${state.month}'][data-product='${state.product}'][data-metric='mix'][data-team='${state.team}']`);
                 if (input) input.value = state.previousValue;
             } else if (state.metric === 'abpa') {
                 AppState.teamData[AppState.currentForecast][teamKey].abpa[state.product][state.month] = parseInt(state.previousValue);
-                const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="abpa"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${state.month}'][data-product='${state.product}'][data-metric='abpa'][data-team='${state.team}']`);
                 if (input) input.value = String(Math.round((state.previousValue || 0) / 1000));
             } else if (state.metric === 'additional-productivity') {
                 AppState.teamData[AppState.currentForecast][teamKey]
                     .additionalProducts[state.product].productivity[state.month] = parseFloat(state.previousValue).toFixed(2);
-                const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="additional-productivity"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${state.month}'][data-product='${state.product}'][data-metric='additional-productivity'][data-team='${state.team}']`);
                 if (input) input.value = parseFloat(state.previousValue).toFixed(2);
             } else if (state.metric === 'additional-abpa') {
                 AppState.teamData[AppState.currentForecast][teamKey]
                     .additionalProducts[state.product].abpa[state.month] = parseInt(state.previousValue);
-                const input = document.querySelector(`input[data-month="${state.month}"][data-product="${state.product}"][data-metric="additional-abpa"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${state.month}'][data-product='${state.product}'][data-metric='additional-abpa'][data-team='${state.team}']`);
                 if (input) input.value = String(Math.round((state.previousValue || 0) / 1000));
             }
             
@@ -2146,31 +2210,31 @@ function undo() {
                 AppState.teamData[AppState.currentForecast][`Team ${state.team}`].pgLevels[pg][month] = parseInt(previousValue) || 0;
                 updateHeadcountTotals(state.team, month);
                 updateProductionCalculations(state.team, month);
-                const input = document.querySelector(`input[data-month="${month}"][data-pg="${pg}"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${month}'][data-pg='${pg}'][data-team='${state.team}']`);
                 if (input) input.value = parseInt(previousValue) || 0;
             } else if (metric === 'productivity') {
                 AppState.teamData[AppState.currentForecast][teamKey].productivity[month] = parseFloat(previousValue).toFixed(2);
-                const input = document.querySelector(`input[data-month="${month}"][data-metric="productivity"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${month}'][data-metric='productivity'][data-team='${state.team}']`);
                 if (input) input.value = parseFloat(previousValue).toFixed(2);
                 updateProductionCalculations(state.team, month);
             } else if (metric === 'mix') {
                 AppState.teamData[AppState.currentForecast][teamKey].productMix[product][month] = (parseFloat(previousValue) || 0) / 100;
-                const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="mix"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='mix'][data-team='${state.team}']`);
                 if (input) input.value = parseFloat(previousValue) || 0;
                 updateProductionCalculations(state.team, month);
             } else if (metric === 'abpa') {
                 AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month] = parseFloat(previousValue) || 0;
-                const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="abpa"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='abpa'][data-team='${state.team}']`);
                 if (input) input.value = String(Math.round((previousValue || 0) / 1000));
                 updateProductionCalculations(state.team, month);
             } else if (metric === 'additional-productivity') {
                 AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].productivity[month] = parseFloat(previousValue).toFixed(2);
-                const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-productivity"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-productivity'][data-team='${state.team}']`);
                 if (input) input.value = parseFloat(previousValue).toFixed(2);
                 updateAdditionalProductCalculations(state.team, month, product);
             } else if (metric === 'additional-abpa') {
                 AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].abpa[month] = parseFloat(previousValue) || 0;
-                const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${state.team}"]`);
+                const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-abpa'][data-team='${state.team}']`);
                 if (input) input.value = String(Math.round((previousValue || 0) / 1000));
                 updateAdditionalProductCalculations(state.team, month, product);
             }
@@ -2312,7 +2376,7 @@ function redo() {
     // Ensure correct subtab DOM exists, then set input value and fire 'change'
     const applyCell = () => {
       const containerId = (AppState.headcountSubtab === 'non-sales' ? 'non-sales-headcount-subtab' : 'sales-headcount-subtab');
-      const input = document.querySelector(`#${containerId} input[data-month="${month}"][data-pg="${pg}"][data-team="${team}"]`);
+      const input = document.querySelector(`#${containerId} input[data-month='${month}'][data-pg='${pg}'][data-team='${team}']`);
       if (input) {
         AppState.isProgrammaticChange = true;
         input.value = parseInt(newValue) || 0;
@@ -2353,7 +2417,7 @@ function redo() {
       }
     }
     const applyValue = () => {
-      const selector = `#non-sales-headcount-subtab input[data-month="${month}"][data-group="${groupKey}"][data-team-id="${teamId}"]`;
+      const selector = `#non-sales-headcount-subtab input[data-month='${month}'][data-group='${groupKey}'][data-team-id='${teamId}']`;
       const inputEl = document.querySelector(selector);
       if (inputEl) {
         AppState.isProgrammaticChange = true;
@@ -2379,19 +2443,19 @@ function redo() {
 
     if (metric === 'productivity') {
       AppState.teamData[AppState.currentForecast][teamKey].productivity[month] = parseFloat(newValue).toFixed(2);
-      const input = document.querySelector(`input[data-month="${month}"][data-metric="productivity"][data-team="${team}"]`);
+      const input = document.querySelector(`input[data-month='${month}'][data-metric='productivity'][data-team='${team}']`);
       if (input) input.value = parseFloat(newValue).toFixed(2);
       fieldName = 'productivity';
     } else if (metric === 'mix') {
       AppState.teamData[AppState.currentForecast][teamKey].productMix[product][month] = newValue / 100;
-      const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="mix"][data-team="${team}"]`);
+      const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='mix'][data-team='${team}']`);
       if (input) input.value = newValue;
       const letter = product.split(' ')[1].toLowerCase();
       fieldName = `product_${letter}_mix`;
       dbValue = newValue / 100; // store as decimal
     } else if (metric === 'abpa') {
       AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month] = newValue;
-      const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="abpa"][data-team="${team}"]`);
+      const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='abpa'][data-team='${team}']`);
       if (input) input.value = formatNumber(newValue);
       const letter = product.split(' ')[1].toLowerCase();
       fieldName = `product_${letter}_abpa`;
@@ -2412,12 +2476,12 @@ function redo() {
 
     if (metric === 'additional-productivity') {
       AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].productivity[month] = parseFloat(newValue).toFixed(2);
-      const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-productivity"][data-team="${team}"]`);
+      const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-productivity'][data-team='${team}']`);
       if (input) input.value = parseFloat(newValue).toFixed(2);
       fieldName = `product_${product.toLowerCase()}_productivity`;
     } else if (metric === 'additional-abpa') {
       AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].abpa[month] = parseInt(newValue);
-      const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${team}"]`);
+      const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-abpa'][data-team='${team}']`);
       if (input) input.value = formatNumber(newValue);
       fieldName = `product_${product.toLowerCase()}_abpa`;
     }
@@ -2442,33 +2506,33 @@ function redo() {
 
       if (metric === 'headcount') {
         AppState.teamData[AppState.currentForecast][teamKey].pgLevels[pg][month] = parseInt(val) || 0;
-        const input = document.querySelector(`input[data-month="${month}"][data-pg="${pg}"][data-team="${state.team}"]`);
+        const input = document.querySelector(`input[data-month='${month}'][data-pg='${pg}'][data-team='${state.team}']`);
         if (input) input.value = parseInt(val) || 0;
         updateHeadcountTotals(state.team, month);
         updateProductionCalculations(state.team, month);
       } else if (metric === 'productivity') {
         AppState.teamData[AppState.currentForecast][teamKey].productivity[month] = parseFloat(val).toFixed(2);
-        const input = document.querySelector(`input[data-month="${month}"][data-metric="productivity"][data-team="${state.team}"]`);
+        const input = document.querySelector(`input[data-month='${month}'][data-metric='productivity'][data-team='${state.team}']`);
         if (input) input.value = parseFloat(val).toFixed(2);
         updateProductionCalculations(state.team, month);
       } else if (metric === 'mix') {
         AppState.teamData[AppState.currentForecast][teamKey].productMix[product][month] = (parseFloat(val) || 0) / 100;
-        const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="mix"][data-team="${state.team}"]`);
+        const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='mix'][data-team='${state.team}']`);
         if (input) input.value = parseFloat(val) || 0;
         updateProductionCalculations(state.team, month);
       } else if (metric === 'abpa') {
         AppState.teamData[AppState.currentForecast][teamKey].abpa[product][month] = parseFloat(val) || 0;
-        const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="abpa"][data-team="${state.team}"]`);
+        const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='abpa'][data-team='${state.team}']`);
         if (input) input.value = String(Math.round((val || 0) / 1000));
         updateProductionCalculations(state.team, month);
       } else if (metric === 'additional-productivity') {
         AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].productivity[month] = parseFloat(val).toFixed(2);
-        const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-productivity"][data-team="${state.team}"]`);
+        const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-productivity'][data-team='${state.team}']`);
         if (input) input.value = parseFloat(val).toFixed(2);
         updateAdditionalProductCalculations(state.team, month, product);
       } else if (metric === 'additional-abpa') {
         AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].abpa[month] = parseFloat(val) || 0;
-        const input = document.querySelector(`input[data-month="${month}"][data-product="${product}"][data-metric="additional-abpa"][data-team="${state.team}"]`);
+        const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-abpa'][data-team='${state.team}']`);
         if (input) input.value = String(Math.round((val || 0) / 1000));
         updateAdditionalProductCalculations(state.team, month, product);
       }
@@ -2815,6 +2879,12 @@ function switchHeadcountSubtab(which) {
         nsC.style.display = which === 'non-sales' ? '' : 'none';
     }
 
+    const headcountAdminButton = document.getElementById('headcount-admin-btn');
+    if (headcountAdminButton) {
+        const shouldShowAdmin = which === 'sales' && !AppState.isGroupView;
+        headcountAdminButton.style.display = shouldShowAdmin ? '' : 'none';
+    }
+
     if (typeof initializeSidebar === 'function') {
         initializeSidebar();
     }
@@ -2984,8 +3054,3 @@ async function handleNonSalesHeadcountChange(input) {
         }
     }
 }
-
-
-
-
-

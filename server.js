@@ -197,14 +197,81 @@ app.get('/api/team-data/:teamId/:versionId', async (req, res) => {
         }
 
         
+        // Fetch headcount flow data
+        const [actualFlowRows] = await forecastPool.query(
+            `SELECT period_date, starting_headcount, flow_1, flow_2, flow_3, flow_4, flow_5, ending_headcount
+             FROM headcount_flows
+             WHERE team_id = ? AND data_type = 'actual'
+             ORDER BY period_date`,
+            [teamId]
+        );
+        const actualFlowMap = new Map(actualFlowRows.map(row => [normalizeDateKey(row.period_date), row]));
+
+        const [forecastFlowRows] = await forecastPool.query(
+            `SELECT period_date, starting_headcount, flow_1, flow_2, flow_3, flow_4, flow_5, ending_headcount
+             FROM headcount_flows
+             WHERE team_id = ? AND data_type = 'forecast' AND version_id = ?
+             ORDER BY period_date`,
+            [teamId, versionId]
+        );
+        const forecastFlowMap = new Map(forecastFlowRows.map(row => [normalizeDateKey(row.period_date), row]));
+
         // Combine and format data
         const combinedData = [
-            ...actualsData.map(row => ({
-                ...row,
-                version_id: parseInt(versionId),
-                version_name: versionRows[0].version_name
-            })),
-            ...forecastData
+            ...actualsData.map(row => {
+                const key = normalizeDateKey(row.period_date);
+                const flowRow = actualFlowMap.get(key) || {};
+                const starting = Number(flowRow.starting_headcount ?? 0);
+                const flows = [
+                    Number(flowRow.flow_1 ?? 0),
+                    Number(flowRow.flow_2 ?? 0),
+                    Number(flowRow.flow_3 ?? 0),
+                    Number(flowRow.flow_4 ?? 0),
+                    Number(flowRow.flow_5 ?? 0)
+                ];
+                const ending = flowRow.ending_headcount != null
+                    ? Number(flowRow.ending_headcount)
+                    : starting + flows.reduce((sum, val) => sum + val, 0);
+
+                return {
+                    ...row,
+                    version_id: parseInt(versionId),
+                    version_name: versionRows[0].version_name,
+                    starting_headcount: starting,
+                    flow_1: flows[0],
+                    flow_2: flows[1],
+                    flow_3: flows[2],
+                    flow_4: flows[3],
+                    flow_5: flows[4],
+                    ending_headcount: ending
+                };
+            }),
+            ...forecastData.map(row => {
+                const key = normalizeDateKey(row.period_date);
+                const flowRow = forecastFlowMap.get(key) || {};
+                const starting = Number(flowRow.starting_headcount ?? 0);
+                const flows = [
+                    Number(flowRow.flow_1 ?? 0),
+                    Number(flowRow.flow_2 ?? 0),
+                    Number(flowRow.flow_3 ?? 0),
+                    Number(flowRow.flow_4 ?? 0),
+                    Number(flowRow.flow_5 ?? 0)
+                ];
+                const ending = flowRow.ending_headcount != null
+                    ? Number(flowRow.ending_headcount)
+                    : starting + flows.reduce((sum, val) => sum + val, 0);
+
+                return {
+                    ...row,
+                    starting_headcount: starting,
+                    flow_1: flows[0],
+                    flow_2: flows[1],
+                    flow_3: flows[2],
+                    flow_4: flows[3],
+                    flow_5: flows[4],
+                    ending_headcount: ending
+                };
+            })
         ];
         
         res.json({
@@ -260,6 +327,9 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
         };
         
         // Get aggregated actuals data
+        const teamPlaceholders = teamIds.map(() => '?').join(', ');
+        const actualParams = [...teamIds, dateRange.start, forecastStartDate];
+
         const [actualsData] = await actualsPool.query(
             `SELECT 
                 period_date,
@@ -283,15 +353,15 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
                 AVG(product_c_abpa) as product_c_abpa,
                 AVG(product_d_abpa) as product_d_abpa
              FROM v_actuals_for_api
-             WHERE team_id IN (${teamIds.join(',')})
+             WHERE team_id IN (${teamPlaceholders})
              AND period_date >= ?
              AND period_date < ?
              GROUP BY period_date, period_string, business_days
              ORDER BY period_date`,
-            [dateRange.start, forecastStartDate]
+            actualParams
         );
-        
-        // Get aggregated forecast data
+
+        const forecastParams = [...teamIds, versionId, forecastStartDate, dateRange.end];
         const [forecastData] = await forecastPool.query(
             `SELECT 
                 period_date,
@@ -315,13 +385,13 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
                 AVG(product_c_abpa) as product_c_abpa,
                 AVG(product_d_abpa) as product_d_abpa
              FROM forecast_data
-             WHERE team_id IN (${teamIds.join(',')})
+             WHERE team_id IN (${teamPlaceholders})
              AND version_id = ?
              AND period_date >= ?
              AND period_date <= ?
              GROUP BY period_date
              ORDER BY period_date`,
-            [versionId, forecastStartDate, dateRange.end]
+            forecastParams
         );
         if (forecastData.length) {
             const periodDates = [...new Set(
@@ -352,9 +422,106 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
             }
         }
 
-        
+        const actualFlowParams = [...teamIds, dateRange.start, forecastStartDate];
+        const [actualFlowRows] = await forecastPool.query(
+            `SELECT
+                period_date,
+                SUM(starting_headcount) AS starting_headcount,
+                SUM(flow_1) AS flow_1,
+                SUM(flow_2) AS flow_2,
+                SUM(flow_3) AS flow_3,
+                SUM(flow_4) AS flow_4,
+                SUM(flow_5) AS flow_5,
+                SUM(ending_headcount) AS ending_headcount
+             FROM headcount_flows
+             WHERE data_type = 'actual'
+               AND team_id IN (${teamPlaceholders})
+               AND period_date >= ?
+               AND period_date < ?
+             GROUP BY period_date
+             ORDER BY period_date`,
+            actualFlowParams
+        );
+        const actualFlowMap = new Map(actualFlowRows.map(row => [normalizeDateKey(row.period_date), row]));
+
+        const forecastFlowParams = [...teamIds, versionId, forecastStartDate, dateRange.end];
+        const [forecastFlowRows] = await forecastPool.query(
+            `SELECT
+                period_date,
+                SUM(starting_headcount) AS starting_headcount,
+                SUM(flow_1) AS flow_1,
+                SUM(flow_2) AS flow_2,
+                SUM(flow_3) AS flow_3,
+                SUM(flow_4) AS flow_4,
+                SUM(flow_5) AS flow_5,
+                SUM(ending_headcount) AS ending_headcount
+             FROM headcount_flows
+             WHERE data_type = 'forecast'
+               AND team_id IN (${teamPlaceholders})
+               AND version_id = ?
+               AND period_date >= ?
+               AND period_date <= ?
+             GROUP BY period_date
+             ORDER BY period_date`,
+            forecastFlowParams
+        );
+        const forecastFlowMap = new Map(forecastFlowRows.map(row => [normalizeDateKey(row.period_date), row]));
+
         // Combine data
-        const combinedData = [...actualsData, ...forecastData];
+        const combinedData = [
+            ...actualsData.map(row => {
+                const key = normalizeDateKey(row.period_date);
+                const flowRow = actualFlowMap.get(key) || {};
+                const starting = Number(flowRow.starting_headcount ?? 0);
+                const flows = [
+                    Number(flowRow.flow_1 ?? 0),
+                    Number(flowRow.flow_2 ?? 0),
+                    Number(flowRow.flow_3 ?? 0),
+                    Number(flowRow.flow_4 ?? 0),
+                    Number(flowRow.flow_5 ?? 0)
+                ];
+                const ending = flowRow.ending_headcount != null
+                    ? Number(flowRow.ending_headcount)
+                    : starting + flows.reduce((sum, val) => sum + val, 0);
+
+                return {
+                    ...row,
+                    starting_headcount: starting,
+                    flow_1: flows[0],
+                    flow_2: flows[1],
+                    flow_3: flows[2],
+                    flow_4: flows[3],
+                    flow_5: flows[4],
+                    ending_headcount: ending
+                };
+            }),
+            ...forecastData.map(row => {
+                const key = normalizeDateKey(row.period_date);
+                const flowRow = forecastFlowMap.get(key) || {};
+                const starting = Number(flowRow.starting_headcount ?? 0);
+                const flows = [
+                    Number(flowRow.flow_1 ?? 0),
+                    Number(flowRow.flow_2 ?? 0),
+                    Number(flowRow.flow_3 ?? 0),
+                    Number(flowRow.flow_4 ?? 0),
+                    Number(flowRow.flow_5 ?? 0)
+                ];
+                const ending = flowRow.ending_headcount != null
+                    ? Number(flowRow.ending_headcount)
+                    : starting + flows.reduce((sum, val) => sum + val, 0);
+
+                return {
+                    ...row,
+                    starting_headcount: starting,
+                    flow_1: flows[0],
+                    flow_2: flows[1],
+                    flow_3: flows[2],
+                    flow_4: flows[3],
+                    flow_5: flows[4],
+                    ending_headcount: ending
+                };
+            })
+        ];
         
         res.json({
             success: true,
@@ -373,6 +540,103 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch group data' });
     }
 });
+
+const HEADCOUNT_FLOW_FIELDS = ['starting_headcount', 'flow_1', 'flow_2', 'flow_3', 'flow_4', 'flow_5'];
+
+function buildHeadcountFlowUpdate(update) {
+    const { teamId, periodDate, dataType, versionId, field, value } = update || {};
+    if (teamId == null || periodDate == null || field == null) {
+        return { error: 'teamId, periodDate, and field are required' };
+    }
+
+    if (!HEADCOUNT_FLOW_FIELDS.includes(field)) {
+        return { error: `Invalid field: ${field}` };
+    }
+
+    const numericTeam = Number(teamId);
+    if (!Number.isFinite(numericTeam)) {
+        return { error: 'teamId must be numeric' };
+    }
+
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return { error: 'value must be a number' };
+    }
+
+    const normalizedType = dataType === 'actual' ? 'actual' : 'forecast';
+    const normalizedVersion = normalizedType === 'forecast' ? Number(versionId) : 0;
+
+    if (normalizedType === 'forecast' && (!Number.isFinite(normalizedVersion) || normalizedVersion === 0)) {
+        return { error: 'versionId is required for forecast rows' };
+    }
+
+    const sql = `
+        INSERT INTO headcount_flows
+            (team_id, period_date, period_label, data_type, version_id, ${field})
+        VALUES (?, ?, DATE_FORMAT(?, '%b-%y'), ?, ?, ?)
+        ON DUPLICATE KEY UPDATE ${field} = VALUES(${field})
+    `;
+
+    const params = [
+        numericTeam,
+        periodDate,
+        periodDate,
+        normalizedType,
+        normalizedType === 'forecast' ? normalizedVersion : 0,
+        numericValue
+    ];
+
+    return { sql, params };
+}
+
+app.put('/api/headcount-flows', async (req, res) => {
+    try {
+        const prepared = buildHeadcountFlowUpdate(req.body);
+        if (!prepared || prepared.error) {
+            const message = prepared?.error || 'Invalid payload';
+            return res.status(400).json({ success: false, error: message });
+        }
+
+        await forecastPool.execute(prepared.sql, prepared.params);
+        res.json({ success: true });
+    } catch (error) {
+        logger.error('Error updating headcount flow:', error);
+        res.status(500).json({ success: false, error: 'Failed to update headcount flow' });
+    }
+});
+
+app.put('/api/headcount-flows/bulk', async (req, res) => {
+    const updates = Array.isArray(req.body?.updates) ? req.body.updates : null;
+    if (!updates || updates.length === 0) {
+        return res.status(400).json({ success: false, error: 'updates array is required' });
+    }
+
+    const connection = await forecastPool.getConnection();
+    try {
+        await connection.beginTransaction();
+
+        for (const update of updates) {
+            const prepared = buildHeadcountFlowUpdate(update);
+            if (!prepared || prepared.error) {
+                await connection.rollback();
+                const message = prepared?.error || 'Invalid payload';
+                return res.status(400).json({ success: false, error: message });
+            }
+
+            await connection.execute(prepared.sql, prepared.params);
+        }
+
+        await connection.commit();
+        res.json({ success: true, updated: updates.length });
+    } catch (error) {
+        await connection.rollback();
+        logger.error('Error bulk updating headcount flows:', error);
+        res.status(500).json({ success: false, error: 'Failed to update headcount flows' });
+    } finally {
+        connection.release();
+    }
+});
+
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {

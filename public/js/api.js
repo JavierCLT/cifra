@@ -78,7 +78,30 @@ const API = {
             return result.data;
         }
     },
-    
+
+    headcountFlows: {
+        async update(data) {
+            if (!data || typeof data !== 'object') {
+                throw new Error('data is required to update headcount flows');
+            }
+            return await API.request('/headcount-flows', {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+        },
+
+        async bulkUpdate(payload) {
+            const body = Array.isArray(payload) ? { updates: payload } : payload;
+            if (!body || !Array.isArray(body.updates) || body.updates.length === 0) {
+                throw new Error('bulkUpdate requires a non-empty updates array');
+            }
+            return await API.request('/headcount-flows/bulk', {
+                method: 'PUT',
+                body: JSON.stringify(body)
+            });
+        }
+    },
+
     // Combined data API
     teamData: {
         async get(teamId, versionId, startDate, endDate) {
@@ -179,3 +202,4 @@ API.nonSales = {
     }
 };
 
+window.API = API;

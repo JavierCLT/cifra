@@ -115,6 +115,81 @@ function addFormatting(input) {
     input.value = value.toLocaleString();
 }
 
+function renderHeadcountFlowsTable(data, months, opts = {}) {
+    const DEFAULT_FLOW_ROWS = [
+        { key: 'starting_headcount', label: 'Starting Headcount', isStarting: true },
+        { key: 'flow_1', label: 'Flow 1' },
+        { key: 'flow_2', label: 'Flow 2' },
+        { key: 'flow_3', label: 'Flow 3' },
+        { key: 'flow_4', label: 'Flow 4' },
+        { key: 'flow_5', label: 'Flow 5' },
+        { key: 'ending_headcount', label: 'Ending Headcount', isCalculated: true }
+    ];
+    const flowRows = Array.isArray(window.HEADCOUNT_FLOW_ROWS) && window.HEADCOUNT_FLOW_ROWS.length ? window.HEADCOUNT_FLOW_ROWS : DEFAULT_FLOW_ROWS;
+    if (!flowRows.length || !data) {
+        return '';
+    }
+
+    const forecastStatus = data.forecastStatus || {};
+    const flows = data.headcountFlows || {};
+    const teamId = opts.teamId || AppState.currentTeam;
+    const allowEditing = !AppState.isGroupView && AppState.currentVersion && AppState.currentVersion.version_id === 2;
+    const editableKeys = new Set(flowRows.filter(row => !row.isCalculated && !row.isStarting).map(row => row.key));
+
+    let html = '<div class="headcount-flow-container"><table class="data-table headcount-flow-table">';
+    html += '<thead><tr><th rowspan="2">Flow</th>';
+    months.forEach((month, idx) => {
+        const isForecast = forecastStatus[month] === 'Forecast';
+        const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
+        html += `<th class="${isForecast ? 'forecast-col' : 'actual-col'}">${businessDays}</th>`;
+    });
+    QUARTERS.forEach(() => {
+        html += '<th class="quarter-col">Avg</th>';
+    });
+    YEARS.forEach(year => {
+        html += `<th class="year-total-col">FY${year.slice(-2)}</th>`;
+    });
+    html += '</tr><tr>';
+    months.forEach(month => {
+        const isForecast = forecastStatus[month] === 'Forecast';
+        html += `<th class="${isForecast ? 'forecast-col' : 'actual-col'}">${month}</th>`;
+    });
+    QUARTERS.forEach(quarter => {
+        html += `<th class="quarter-col">${quarter}</th>`;
+    });
+    YEARS.forEach(() => {
+        html += '<th class="year-total-col">Avg</th>';
+    });
+    html += '</tr></thead><tbody>';
+
+    flowRows.forEach(row => {
+        const rowValues = flows[row.key] || {};
+        html += `<tr><td>${row.label}</td>`;
+        months.forEach(month => {
+            const isForecast = forecastStatus[month] === 'Forecast';
+            const baseClass = isForecast ? 'forecast-col' : 'actual-col';
+            const value = Number(rowValues[month] ?? 0);
+            const editable = allowEditing && isForecast && editableKeys.has(row.key);
+            if (editable) {
+                html += `<td class="${baseClass}"><input type="number" class="selectable-input" data-month="${month}" data-flow-key="${row.key}" data-team="${teamId}" value="${value}" onchange="handleHeadcountFlowChange(this)"></td>`;
+            } else {
+                html += `<td class="${baseClass}">${value}</td>`;
+            }
+        });
+        QUARTERS.forEach(quarter => {
+            const avg = calculateQuarterAverage(rowValues, quarter);
+            html += `<td class="quarter-col">${avg}</td>`;
+        });
+        YEARS.forEach(year => {
+            const avg = calculateYearAverage(rowValues, months, year);
+            html += `<td class="year-total-col">${avg}</td>`;
+        });
+        html += '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    return html;
+}
 // Render headcount tab (supports Sales and Non-Sales modes)
 function renderHeadcountTab(data, opts = {}) {
     const containerId = opts.containerId || 'headcount-tab';
@@ -122,8 +197,33 @@ function renderHeadcountTab(data, opts = {}) {
     const container = document.getElementById(containerId);
     const changeHandler = mode === 'non-sales' ? 'handleNonSalesHeadcountChange' : 'handleHeadcountChange';
     const months = generateMonthList();
-    
-    let html = '<div class="data-table-wrapper"><table class="data-table">';
+    let html = '';
+    html += '<div class="data-table-wrapper headcount-scroll-wrapper">';
+
+    const toolbar = document.getElementById('headcount-toolbar');
+    const subtabsEl = document.getElementById('headcount-subtabs');
+    const adminButton = document.getElementById('headcount-admin-btn');
+
+    if (toolbar) {
+        toolbar.style.display = 'flex';
+    }
+    if (subtabsEl) {
+        subtabsEl.style.display = 'inline-flex';
+    }
+    if (adminButton) {
+        const shouldShowAdmin = mode === 'sales' && !AppState.isGroupView;
+        adminButton.style.display = shouldShowAdmin ? '' : 'none';
+    }
+
+    if (mode === 'sales' && !AppState.isGroupView) {
+        const flowsHtml = renderHeadcountFlowsTable(data, months, { teamId: AppState.currentTeam });
+        if (flowsHtml) {
+            html += flowsHtml;
+        }
+
+    }
+
+    html += '<table class="data-table">';
     
     // Header rows
     html += '<thead><tr><th rowspan="2">PG Level</th>';
@@ -1307,3 +1407,4 @@ function getQuarterRange() {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { TABLE_CONFIG, YEARS, QUARTERS, getYearRange, getQuarterRange };
 }
+

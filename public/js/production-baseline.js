@@ -118,7 +118,8 @@ function getProductionBaselineState() {
             period: 12,
             productivity: null,
             mix: {},
-            abpa: {}
+            abpa: {},
+            deepeningPercent: null
         };
     }
     return AppState.productionBaselineState[key];
@@ -130,7 +131,8 @@ function computeProductionBaselineAverages(data, months, period) {
     const result = {
         productivity: 0,
         mix: {},
-        abpa: {}
+        abpa: {},
+        deepeningPercent: 0
     };
     if (trailing.length === 0) {
         PRODUCTS.forEach(product => {
@@ -144,6 +146,9 @@ function computeProductionBaselineAverages(data, months, period) {
         result.mix[product] = trailing.reduce((sum, month) => sum + toNumber(data.productMix[product][month], 0), 0) / trailing.length;
         result.abpa[product] = trailing.reduce((sum, month) => sum + toNumber(data.abpa[product][month], 0), 0) / trailing.length;
     });
+    if (data.deepening && data.deepening.percent) {
+        result.deepeningPercent = trailing.reduce((sum, month) => sum + toNumber(data.deepening.percent[month], 0), 0) / trailing.length;
+    }
     return result;
 }
 
@@ -164,6 +169,7 @@ function updateBaselineAverageCells(column, averages, period) {
     };
 
     setAvg('.baseline-row--metric[data-baseline-metric="productivity"]', toNumber(averages.productivity, 0).toFixed(2));
+    setAvg('.baseline-row--metric[data-baseline-metric="deepening-percent"]', `${(toNumber(averages.deepeningPercent, 0) * 100).toFixed(1)}%`);
 
     PRODUCTS.forEach(product => {
         const slug = resolveSlug(product);
@@ -223,6 +229,21 @@ function applyProductionBaselines({ data, months, teamId = AppState.currentTeam,
             const prodInput = targetRoot.querySelector(`input[data-metric="productivity"][data-month="${month}"]`);
             if (prodInput) {
                 prodInput.value = monthlyProd.toFixed(2);
+            }
+        }
+
+        if (!data.deepening) {
+            data.deepening = { amount: {}, percent: {} };
+        } else {
+            data.deepening.percent = data.deepening.percent || {};
+            data.deepening.amount = data.deepening.amount || {};
+        }
+        const deepBaseline = toNumber(baselineState.deepeningPercent, 0);
+        data.deepening.percent[month] = deepBaseline;
+        if (updateDom && targetRoot) {
+            const deepInput = targetRoot.querySelector(`input[data-metric="deepening-percent"][data-month="${month}"]`);
+            if (deepInput) {
+                deepInput.value = (deepBaseline * 100).toFixed(1);
             }
         }
 
@@ -300,6 +321,8 @@ function createBaselineChangeSnapshot({ data, months, teamId = AppState.currentT
     forecastMonths.forEach(month => {
         const baseProd = Number(toNumber(data.productivity[month], 0).toFixed(2));
         records.push({ team, month, metric: 'productivity', previousValue: baseProd });
+        const deepValue = Number((toNumber(data.deepening?.percent?.[month], 0) * 100).toFixed(1));
+        records.push({ team, month, metric: 'deepening_percent', previousValue: deepValue });
 
         PRODUCTS.forEach(product => {
             const mixValue = Number((toNumber(data.productMix[product][month], 0) * 100).toFixed(1));
@@ -328,6 +351,11 @@ function createBaselineChangeSnapshot({ data, months, teamId = AppState.currentT
                 } else if (entry.metric === 'abpa') {
                     newValue = Math.round(toNumber(data.abpa[entry.product][entry.month], 0));
                     if (!valuesApproximatelyEqual(entry.previousValue, newValue, 0.5)) {
+                        changes.push({ ...entry, newValue });
+                    }
+                } else if (entry.metric === 'deepening_percent') {
+                    newValue = Number((toNumber(data.deepening?.percent?.[entry.month], 0) * 100).toFixed(1));
+                    if (!valuesApproximatelyEqual(entry.previousValue, newValue, 0.05)) {
                         changes.push({ ...entry, newValue });
                     }
                 }
@@ -459,6 +487,14 @@ function handleProductionBaselineInputChange(event) {
         value = Math.max(0, Math.round(value));
         baselineState.abpa[productName] = value * 1000;
         input.value = String(value);
+    } else if (metric === 'deepening-percent') {
+        let value = Number(input.value);
+        if (!Number.isFinite(value)) {
+            value = toNumber(baselineState.deepeningPercent, 0) * 100;
+        }
+        value = clamp(value, 0, 100);
+        baselineState.deepeningPercent = value / 100;
+        input.value = value.toFixed(1);
     } else {
         return;
     }
@@ -577,16 +613,10 @@ function syncProductionBaselineLayout(container) {
     });
 
     const tailSpacer = baselineColumn.querySelector('.baseline-spacer--tail');
-    if (tailSpacer && abpaAnchors.length) {
-        const tbody = table.querySelector('tbody');
-        const tableRect = tbody ? tbody.getBoundingClientRect() : null;
-        const lastAbpaRect = abpaAnchors[abpaAnchors.length - 1].getBoundingClientRect();
-        if (tableRect) {
-            const gap = Math.max(0, tableRect.bottom - lastAbpaRect.bottom);
-            tailSpacer.style.height = `${gap}px`;
-            tailSpacer.style.minHeight = `${gap}px`;
-            tailSpacer.style.maxHeight = `${gap}px`;
-        }
+    if (tailSpacer) {
+        tailSpacer.style.height = '10px';
+        tailSpacer.style.minHeight = '';
+        tailSpacer.style.maxHeight = '';
     }
 }
 
@@ -609,6 +639,28 @@ function scheduleBaselineLayoutSync() {
 }
 
 window.addEventListener('resize', scheduleBaselineLayoutSync);
+
+function ensureBaselineStateInitialized(data) {
+    if (!data) return;
+    const baselineState = getProductionBaselineState();
+    if (!baselineState) return;
+    const months = typeof generateMonthList === 'function' ? generateMonthList() : [];
+    const period = baselineState.period || 12;
+    const averages = computeProductionBaselineAverages(data, months, period);
+    if (baselineState.productivity == null) {
+        baselineState.productivity = Number(toNumber(averages.productivity, 0).toFixed(2));
+    }
+    PRODUCTS.forEach(product => {
+        if (baselineState.mix[product] == null) {
+            baselineState.mix[product] = toNumber(averages.mix[product], 0);
+        }
+        if (baselineState.abpa[product] == null) {
+            baselineState.abpa[product] = Math.round(toNumber(averages.abpa[product], 0));
+        }
+    });
+}
+
+window.ensureBaselineStateInitialized = ensureBaselineStateInitialized;
 
 function initializeProductionToolbar() {
     const toolbar = document.getElementById('production-toolbar');

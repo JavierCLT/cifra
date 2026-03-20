@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Referral Configuration</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="referral-admin-page">
+    <main class="referral-admin-content referral-admin-content--simple">
+        <section class="referral-admin-hero">
+            <div class="referral-admin-heading">
+                <h1>Referral Configuration</h1>
+                <p class="referral-admin-subtitle">
+                    Use these ratios to convert Quality referrals into the Total and Won volumes.
+                </p>
+            </div>
+            <span id="referralAdminStatus" class="referral-admin-status" aria-live="polite"></span>
+        </section>
+
+        <section class="referral-admin-grid referral-admin-grid--two">
+            <article class="referral-card">
+                <h2>Total to Quality Ratio (%)</h2>
+                <div class="ratio-table-wrapper">
+                    <table class="ratio-table" id="totalRatioTable">
+                        <thead>
+                            <tr>
+                                <th>Outbound Flow</th>
+                                <th>Ratio</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </article>
+
+            <article class="referral-card">
+                <h2>Wins to Quality Ratio (%)</h2>
+                <div class="ratio-table-wrapper">
+                    <table class="ratio-table" id="winsRatioTable">
+                        <thead>
+                            <tr>
+                                <th>Outbound Flow</th>
+                                <th>Ratio</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </article>
+        </section>
+    </main>
+
+    <script src="js/referral-constants.js"></script>
+    <script>
+        (function () {
+            const flows = Array.isArray(window.REFERRAL_OUTBOUND_FLOWS) ? window.REFERRAL_OUTBOUND_FLOWS : [];
+            const DEFAULT_TOTAL = typeof window.REFERRAL_DEFAULT_TOTAL_RATIO === 'number' ? window.REFERRAL_DEFAULT_TOTAL_RATIO : 1.2;
+            const DEFAULT_WINS = typeof window.REFERRAL_DEFAULT_WINS_RATIO === 'number' ? window.REFERRAL_DEFAULT_WINS_RATIO : 0.3;
+            const DEFAULT_GROWTH = typeof window.REFERRAL_DEFAULT_PRODUCTIVITY_GROWTH === 'number'
+                ? window.REFERRAL_DEFAULT_PRODUCTIVITY_GROWTH
+                : 0.01;
+
+            const state = {
+                versionId: null,
+                isSaving: false,
+                saveTimer: null,
+                totalRatios: {},
+                winsRatios: {},
+                productivityGrowth: DEFAULT_GROWTH,
+                updatedBy: 'referral-admin@local'
+            };
+
+            function getQueryParams() {
+                const params = new URLSearchParams(window.location.search);
+                const versionId = Number.parseInt(params.get('versionId'), 10);
+                return Number.isFinite(versionId) ? versionId : null;
+            }
+
+            function renderRatioTable(tableId, ratios, type) {
+                const table = document.getElementById(tableId);
+                if (!table) return;
+                const tbody = table.querySelector('tbody');
+                tbody.innerHTML = flows.map(flow => {
+                    const key = flow.key || flow;
+                    const percent = (ratios[key] ?? (type === 'total' ? DEFAULT_TOTAL : DEFAULT_WINS)) * 100;
+                    return `
+                        <tr>
+                            <td>${flow.label}</td>
+                            <td>
+                                <div class="ratio-input-wrapper">
+                                    <input type="number"
+                                           data-flow-key="${key}"
+                                           data-ratio-type="${type}"
+                                           step="0.1"
+                                           value="${percent.toFixed(1)}">
+                                    <span>%</span>
+                                </div>
+                            </td>
+                        </tr>`;
+                }).join('');
+            }
+
+            function refreshTables() {
+                renderRatioTable('totalRatioTable', state.totalRatios, 'total');
+                renderRatioTable('winsRatioTable', state.winsRatios, 'wins');
+                bindTableInputs();
+            }
+
+            function bindTableInputs() {
+                document.querySelectorAll('.ratio-table input[type="number"]').forEach(input => {
+                    input.addEventListener('change', () => {
+                        const key = input.dataset.flowKey;
+                        const ratioType = input.dataset.ratioType;
+                        const value = Number.parseFloat(input.value);
+                        const normalized = Number.isFinite(value) ? value / 100 : (ratioType === 'total' ? DEFAULT_TOTAL : DEFAULT_WINS);
+                        if (ratioType === 'total') {
+                            state.totalRatios[key] = normalized;
+                        } else {
+                            state.winsRatios[key] = normalized;
+                        }
+                        input.value = (normalized * 100).toFixed(1);
+                        scheduleSave();
+                    });
+                });
+
+                const growthInput = document.getElementById('productivityGrowthInput');
+                if (growthInput) {
+                    growthInput.value = (state.productivityGrowth * 100).toFixed(1);
+                    growthInput.addEventListener('change', () => {
+                        const value = Number.parseFloat(growthInput.value);
+                        const normalized = Number.isFinite(value) ? value / 100 : DEFAULT_GROWTH;
+                        state.productivityGrowth = normalized;
+                        growthInput.value = (normalized * 100).toFixed(1);
+                        scheduleSave();
+                    });
+                }
+            }
+
+            function setStatus(message, isError = false, timeout = 2500) {
+                const pill = document.getElementById('referralAdminStatus');
+                if (!pill) return;
+                pill.textContent = message || '';
+                pill.className = 'referral-admin-status';
+                if (message) {
+                    pill.classList.add('is-visible');
+                    if (isError) {
+                        pill.classList.add('is-error');
+                    }
+                }
+                if (timeout && message) {
+                    setTimeout(() => {
+                        pill.textContent = '';
+                        pill.className = 'referral-admin-status';
+                    }, timeout);
+                }
+            }
+
+            function scheduleSave() {
+                if (state.saveTimer) {
+                    clearTimeout(state.saveTimer);
+                }
+                state.saveTimer = setTimeout(saveSettings, 600);
+            }
+
+            async function saveSettings() {
+                if (state.isSaving || !state.versionId) {
+                    return;
+                }
+                state.isSaving = true;
+                try {
+                    const response = await fetch('/api/referral-config', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            versionId: state.versionId,
+                            totalToQuality: state.totalRatios,
+                            winsToQuality: state.winsRatios,
+                            productivityGrowthRate: state.productivityGrowth,
+                            updatedBy: state.updatedBy
+                        })
+                    });
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.error || 'Save failed');
+                    }
+                    setStatus('Changes saved!');
+                    notifyHost();
+                } catch (error) {
+                    console.error('Failed to save referral settings', error);
+                    setStatus('Save failed. Please retry.', true, 3500);
+                } finally {
+                    state.isSaving = false;
+                }
+            }
+
+            function notifyHost() {
+                const payload = {
+                    versionId: state.versionId,
+                    timestamp: Date.now()
+                };
+                try {
+                    const channel = new BroadcastChannel('referralConfig');
+                    channel.postMessage(payload);
+                    channel.close();
+                } catch (error) {
+                    try {
+                        localStorage.setItem('referral_config_updated', JSON.stringify(payload));
+                        localStorage.removeItem('referral_config_updated');
+                    } catch (storageError) {
+                        console.warn('Failed to broadcast referral config update', storageError);
+                    }
+                }
+            }
+
+            async function loadConfig(versionId) {
+                const response = await fetch(`/api/referral-config?versionId=${versionId}`);
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error || 'Failed to load configuration');
+                }
+                return response.json();
+            }
+
+            async function init() {
+                state.versionId = getQueryParams();
+                if (!state.versionId) {
+                    document.body.innerHTML = '<div class="error">versionId query parameter is required.</div>';
+                    return;
+                }
+                try {
+                    const result = await loadConfig(state.versionId);
+                    const data = result.data || {};
+                    flows.forEach(flow => {
+                        const key = flow.key || flow;
+                        state.totalRatios[key] = Number(data.totalToQuality?.[key]) || DEFAULT_TOTAL;
+                        state.winsRatios[key] = Number(data.winsToQuality?.[key]) || DEFAULT_WINS;
+                    });
+                    state.productivityGrowth = Number.isFinite(Number(data.productivityGrowth))
+                        ? Number(data.productivityGrowth)
+                        : DEFAULT_GROWTH;
+                    state.updatedBy = window.parent?.AppState?.currentUser || state.updatedBy;
+                    refreshTables();
+                } catch (error) {
+                    console.error(error);
+                    setStatus('Failed to load configuration', true, 3000);
+                }
+            }
+
+            init();
+        })();
+    </script>
+</body>
+</html>

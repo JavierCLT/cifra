@@ -31,7 +31,9 @@
         redoStack: [],
         productionBaselineState: {},
         bankingBaselineState: {},
+        referralBaselineState: {},
         productionConfig: null,
+        referralConfig: null,
         scrollPositions: {
             headcount: 0,
             headcount_sales: 0,
@@ -59,7 +61,25 @@
     ];
 
     const PRODUCTS = ['Product A', 'Product B', 'Product C', 'Product D'];
-    const ADDITIONAL_PRODUCTS = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH'];
+    const ADDITIONAL_PRODUCTS = ['AA', 'BB', 'CC', 'DD', 'EE'];
+    const REFERRAL_OUTBOUND_FLOWS = [
+        { key: 'fsa_mlwm', label: 'FSA → MLWM' },
+        { key: 'mfsa_hl', label: 'MFSA → HL' },
+        { key: 'mfsa_sb', label: 'MFSA → SB' },
+        { key: 'fsa_bsa', label: 'FSA → BSA' },
+        { key: 'fsa_cvl', label: 'FSA → CVL' },
+        { key: 'fsa_hl', label: 'FSA → HL' },
+        { key: 'fsa_sb', label: 'FSA → SB' }
+    ];
+    const REFERRAL_INBOUND_FLOWS = [
+        { key: 'merrill_ci', label: 'Merrill → CI' },
+        { key: 'privatebank_ci', label: 'Private Bank → CI' },
+        { key: 'centralized', label: 'Centralized' },
+        { key: 'hl_ci', label: 'HL → CI' },
+        { key: 'csa_ci', label: 'CSA → CI' },
+        { key: 'preferred_ci', label: 'Preferred Banking → CI' },
+        { key: 'bsa_ci', label: 'BSA → CI' }
+    ];
     const slugify = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const SELF_DIRECTED_PRODUCT_NAME = PRODUCTS[0];
@@ -123,6 +143,8 @@
     window.HEADCOUNT_FLOW_ROWS = HEADCOUNT_FLOW_ROWS;
     window.PRODUCTS = PRODUCTS;
     window.ADDITIONAL_PRODUCTS = ADDITIONAL_PRODUCTS;
+    window.REFERRAL_OUTBOUND_FLOWS = REFERRAL_OUTBOUND_FLOWS;
+    window.REFERRAL_INBOUND_FLOWS = REFERRAL_INBOUND_FLOWS;
     window.slugify = slugify;
     window.MONTH_ABBREVIATIONS = MONTH_ABBREVIATIONS;
     window.SELF_DIRECTED_PRODUCT_NAME = SELF_DIRECTED_PRODUCT_NAME;

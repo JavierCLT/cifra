@@ -2,9 +2,11 @@
 
 const API = {
     baseURL: '/api',
+    _pendingRequests: 0,
     
     // Generic request handler
     async request(endpoint, options = {}) {
+        this._pendingRequests += 1;
         try {
             const response = await fetch(`${this.baseURL}${endpoint}`, {
                 ...options,
@@ -23,7 +25,13 @@ const API = {
         } catch (error) {
             console.error('API request failed:', error);
             throw error;
+        } finally {
+            this._pendingRequests = Math.max(0, this._pendingRequests - 1);
         }
+    },
+
+    hasPendingRequests() {
+        return this._pendingRequests > 0;
     },
     
     // Teams API
@@ -53,6 +61,19 @@ const API = {
         
         async createVersion(data) {
             return await API.request('/forecasts/versions', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
+
+        async getAdminAccess(userEmail) {
+            const encoded = encodeURIComponent(userEmail || '');
+            const result = await API.request(`/forecasts/admin-access/${encoded}`);
+            return result.data;
+        },
+
+        async saveLockAndCloneCycle(data) {
+            return await API.request('/forecasts/cycle/save-lock-and-clone', {
                 method: 'POST',
                 body: JSON.stringify(data)
             });
@@ -167,6 +188,26 @@ const API = {
                 throw new Error('payload is required to save production settings');
             }
             return await API.request('/production-config', {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+        }
+    },
+
+    referralConfig: {
+        async get(versionId) {
+            if (!versionId) {
+                throw new Error('versionId is required');
+            }
+            const params = new URLSearchParams({ versionId: String(versionId) });
+            const result = await API.request(`/referral-config?${params.toString()}`);
+            return result.data;
+        },
+        async save(payload) {
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('payload is required to save referral settings');
+            }
+            return await API.request('/referral-config', {
                 method: 'PUT',
                 body: JSON.stringify(payload)
             });

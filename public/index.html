@@ -30,6 +30,9 @@
                         <select id="forecastSelect" onchange="switchForecast()">
                             <!-- Options will be populated from database -->
                         </select>
+                        <button type="button" class="save-lock-btn" id="saveLockForecastBtn" onclick="saveLockAndCloneForecastCycle()" style="display:none;">
+                            Save + Lock Forecast
+                        </button>
                     </div>
                     <div class="view-buttons">
                         <button class="view-btn" onclick="scrollToView('monthly')">Monthly</button>
@@ -47,12 +50,20 @@
 
         <!-- Tabs -->
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('headcount')">HEADCOUNT</button>
-            <button class="tab" onclick="switchTab('production')">PRODUCTION</button>
-            <button class="tab" onclick="switchTab('referrals')">REFERRALS</button>
-            <button class="tab" onclick="switchTab('incentive')">INCENTIVE</button>
-            <button class="tab" onclick="switchTab('kmpc')">KMPC</button>
-            <button class="tab" onclick="switchTab('finance')">FINANCE</button>
+            <div class="tab-button-group">
+                <button class="tab active" onclick="switchTab('headcount')">HEADCOUNT</button>
+                <button class="tab" onclick="switchTab('production')">PRODUCTION</button>
+                <button class="tab" onclick="switchTab('referrals')">REFERRALS</button>
+                <button class="tab" onclick="switchTab('incentive')">INCENTIVE</button>
+                <button class="tab" onclick="switchTab('kmpc')">KMPC</button>
+                <button class="tab" onclick="switchTab('finance')">FINANCE</button>
+            </div>
+            <div class="tab-admin-buttons">
+                <button type="button" class="headcount-admin-btn" id="headcount-admin-btn" onclick="openHeadcountAdminPanel()" style="display:none;">Headcount Admin Panel</button>
+                <button type="button" class="production-admin-btn" id="production-admin-btn" style="display:none;">Production Admin Panel</button>
+                <button type="button" class="referral-admin-btn" id="referral-admin-btn" onclick="openReferralAdminPanel()" style="display:none;">Referral Admin Panel</button>
+                <button type="button" class="incentive-admin-btn" id="incentive-admin-btn" onclick="openIncentiveAdminModal()" style="display:none;">Incentive Admin Panel</button>
+            </div>
         </div>
 
         <!-- Content Area -->
@@ -65,7 +76,6 @@
                             <button id="subtab-non-sales" class="subtab subtab-non-sales" onclick="switchHeadcountSubtab('non-sales')">Non-Sales</button>
                         </div>
                     </div>
-                    <button type="button" class="headcount-admin-btn" id="headcount-admin-btn" onclick="openHeadcountAdminPanel()" style="display:none;">Headcount Admin Panel</button>
                 </div>
                 <!-- Sales headcount view (existing content moved here) -->
                 <div id="sales-headcount-subtab" class="subtab-content active">
@@ -87,7 +97,6 @@
                         </div>
                         <p class="production-toolbar-caption" id="productionToolbarCaption">Prefill forecast months using trailing averages, seasonality multipliers, and annual growth. Edits made in the table still apply month by month.</p>
                     </div>
-                    <button type="button" class="production-admin-btn" id="production-admin-btn">Production Admin Panel</button>
                 </div>
                 <!-- Investments subtab content -->
                 <div id="production-investments-subtab" class="subtab-content active">
@@ -104,7 +113,9 @@
             </div>
             
             <div id="incentive-tab" class="tab-content">
-                <div class="loading">Loading incentive data...</div>
+                <div id="incentive-content" class="incentive-content">
+                    <div class="loading">Loading incentive data...</div>
+                </div>
             </div>
             
             <div id="kmpc-tab" class="tab-content">
@@ -161,6 +172,23 @@
         </div>
     </div>
 
+    <div id="referralAdminModal" class="modal referral-admin-modal">
+        <div class="modal-content">
+            <div class="modal-body">
+                <iframe id="referralAdminFrame" title="Referral Configuration" src="about:blank"></iframe>
+            </div>
+        </div>
+    </div>
+
+    <!-- Incentive Admin Modal -->
+    <div id="incentiveAdminModal" class="modal incentive-admin-modal">
+        <div class="modal-content">
+            <div class="modal-body" style="height:100vh;">
+                <iframe id="incentiveAdminFrame" title="Incentive Configuration" src="about:blank"></iframe>
+            </div>
+        </div>
+    </div>
+
     <!-- External Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -170,6 +198,8 @@
     <script src="js/render-tables.js"></script>
     <script src="js/update-calculations.js"></script>
     <script src="js/excel-export.js"></script>
+    <script src="js/referral-constants.js"></script>
+    <script src="js/render-referrals-tab.js"></script>
     <script src="js/incentive-calculations.js"></script>
     <script src="js/render-incentive-tab.js"></script>
     <script src="js/production-baseline.js"></script>
@@ -177,3 +207,4 @@
     <script src="js/main.js"></script>
 </body>
 </html>
+

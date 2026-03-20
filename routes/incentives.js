@@ -6,6 +6,7 @@
 const express = require('express');
 const router  = express.Router();
 const logger  = require('../utils/logger');
+const { rejectIfVersionLocked } = require('../utils/forecast-guards');
 
 /* ── helpers ── */
 const monthMap = {
@@ -28,6 +29,14 @@ function toDate (periodStr) {
     throw new Error('Bad period format');
   }
   return `${y}-${m}-01`;
+}
+
+async function rejectIncentiveWriteIfLocked(res, poolOrConnection, versionId) {
+  const numericVersionId = Number(versionId);
+  if (!Number.isFinite(numericVersionId) || numericVersionId <= 0) {
+    return false;
+  }
+  return rejectIfVersionLocked({ poolOrConnection, res, versionId: numericVersionId });
 }
 
 /* ========================================================================== */
@@ -93,6 +102,17 @@ router.post('/compensable-metrics', async (req, res) => {
 
   const conn = await req.app.locals.forecastPool.getConnection();
   try {
+    const versionIds = Array.from(new Set(
+      updates
+        .map(u => (u && u.version_id != null ? Number(u.version_id) : 0))
+        .filter(v => Number.isFinite(v) && v > 0)
+    ));
+    for (const versionId of versionIds) {
+      if (await rejectIncentiveWriteIfLocked(res, conn, versionId)) {
+        return;
+      }
+    }
+
     await conn.beginTransaction();
     for (const u of updates) {
       const teamId = parseInt(u.team_id);
@@ -223,22 +243,42 @@ router.post('/quality-ratios', async (req, res) => {
     const conn = await pool.getConnection();
 
     try {
+      const versionId = version_id != null ? Number(version_id) : 0;
+      if (await rejectIncentiveWriteIfLocked(res, conn, versionId)) {
+        return;
+      }
+
       await conn.beginTransaction();
 
       // Store as version-specific (requested behavior). Use a sentinel period
       // so ratios are version-wide, not month-specific.
       const periodDate = '2099-12-01';
-      const versionId  = version_id != null ? Number(version_id) : 0;
 
       for (const [typeKey, value] of Object.entries(ratioFields)) {
         if (!typeKey.endsWith('_ratio')) continue;              // skip junk
         const ratioType = typeKey.replace(/_ratio$/, '');       // strip suffix
+        const normalizedValue = (value === null || value === undefined || value === '')
+          ? null
+          : Number(value);
+
+        if (normalizedValue === null || Number.isNaN(normalizedValue)) {
+          await conn.query(
+            `DELETE FROM incentive_quality_ratios
+              WHERE team_id = ?
+                AND period_date = ?
+                AND version_id = ?
+                AND ratio_type = ?`,
+            [team_id, periodDate, versionId, ratioType]
+          );
+          continue;
+        }
+
         await conn.query(
           `INSERT INTO incentive_quality_ratios
              (team_id, period_date, version_id, ratio_type, ratio_value)
            VALUES (?, ?, ?, ?, ?)
            ON DUPLICATE KEY UPDATE ratio_value = VALUES(ratio_value)`,
-          [team_id, periodDate, versionId, ratioType, parseFloat(value)]
+          [team_id, periodDate, versionId, ratioType, normalizedValue]
         );
       }
 
@@ -272,6 +312,10 @@ router.post('/quality-ratios', async (req, res) => {
 
   const conn = await pool.getConnection();
   try {
+    if (await rejectIncentiveWriteIfLocked(res, conn, versionId)) {
+      return;
+    }
+
     await conn.beginTransaction();
     for (const d of dates) {
       for (const [type, val] of Object.entries(ratios)) {
@@ -290,6 +334,274 @@ router.post('/quality-ratios', async (req, res) => {
     await conn.rollback();
     logger.error(err);
     return res.status(500).json({ error: 'Failed to save quality ratios' });
+  } finally {
+    conn.release();
+  }
+});
+
+/* ========================================================================== */
+/* 3. EXPENSE GRID ENDPOINTS                                                  */
+/* ========================================================================== */
+
+router.get('/expense-grids', async (req, res) => {
+  const teamId = Number(req.query.teamId);
+  const versionId = req.query.versionId != null ? Number(req.query.versionId) : 0;
+
+  if (!Number.isFinite(teamId)) {
+    return res.status(400).json({ error: 'teamId query parameter is required' });
+  }
+
+  try {
+    const pool = req.app.locals.forecastPool;
+    const query = `
+      SELECT expense_grid_id, team_id, version_id, range_min, range_max,
+             qs_multiplier, bg_multiplier, ar_multiplier, sort_order
+        FROM incentive_expense_grids
+       WHERE team_id = ?
+         AND version_id = ?
+       ORDER BY sort_order, expense_grid_id`;
+
+    const [rows] = await pool.query(query, [teamId, versionId]);
+
+    if (!rows.length && versionId !== 0) {
+      const [fallback] = await pool.query(query, [teamId, 0]);
+      return res.json({ success: true, data: fallback });
+    }
+
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    logger.error(err);
+    return res.status(500).json({ error: 'Failed to fetch expense grids' });
+  }
+});
+
+router.post('/expense-grids', async (req, res) => {
+  const { team_id, version_id = 0, rows = [], updatedBy = 'incentive-admin' } = req.body || {};
+  const teamId = Number(team_id);
+  const versionId = Number(version_id);
+
+  if (!Number.isFinite(teamId)) {
+    return res.status(400).json({ error: 'team_id is required' });
+  }
+  if (!Array.isArray(rows)) {
+    return res.status(400).json({ error: 'rows must be an array' });
+  }
+
+  const sanitizeNumber = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const normalisedRows = [];
+  for (let idx = 0; idx < rows.length; idx++) {
+    const row = rows[idx];
+    const rangeMin = sanitizeNumber(row.range_min);
+    if (rangeMin === null) {
+      return res.status(400).json({ error: `Row ${idx + 1}: range_min is required` });
+    }
+    const rangeMax = sanitizeNumber(row.range_max);
+    if (rangeMax !== null && rangeMax < rangeMin) {
+      return res.status(400).json({ error: `Row ${idx + 1}: range_max must be greater than or equal to range_min` });
+    }
+    normalisedRows.push({
+      range_min: rangeMin,
+      range_max: rangeMax,
+      qs_multiplier: sanitizeNumber(row.qs_multiplier),
+      bg_multiplier: sanitizeNumber(row.bg_multiplier),
+      ar_multiplier: sanitizeNumber(row.ar_multiplier),
+      sort_order: Number.isFinite(Number(row.sort_order)) ? Number(row.sort_order) : idx,
+      updated_by: row.updated_by || updatedBy
+    });
+  }
+
+  const conn = await req.app.locals.forecastPool.getConnection();
+  try {
+    if (await rejectIncentiveWriteIfLocked(res, conn, versionId)) {
+      return;
+    }
+
+    await conn.beginTransaction();
+    await conn.query(
+      'DELETE FROM incentive_expense_grids WHERE team_id = ? AND version_id = ?',
+      [teamId, versionId]
+    );
+
+    for (const row of normalisedRows) {
+      await conn.query(
+        `INSERT INTO incentive_expense_grids
+           (team_id, version_id, range_min, range_max,
+            qs_multiplier, bg_multiplier, ar_multiplier,
+            sort_order, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          teamId,
+          versionId,
+          row.range_min,
+          row.range_max,
+          row.qs_multiplier,
+          row.bg_multiplier,
+          row.ar_multiplier,
+          row.sort_order,
+          row.updated_by
+        ]
+      );
+    }
+
+    await conn.commit();
+    return res.json({ success: true });
+  } catch (err) {
+    await conn.rollback();
+    logger.error(err);
+    const message = err && err.message ? err.message : 'Failed to save expense grid';
+    const status = message.startsWith('Row ') ? 400 : 500;
+    return res.status(status).json({ error: message });
+  } finally {
+    conn.release();
+  }
+});
+
+/* ========================================================================== */
+/* 4. TARGETED PAY ENDPOINTS                                                  */
+/* ========================================================================== */
+
+router.get('/targeted-pay', async (req, res) => {
+  try {
+    const pool = req.app.locals.forecastPool;
+    const [rows] = await pool.query(
+      `SELECT team_id, fiscal_year, targeted_pay
+         FROM incentive_targeted_pay`
+    );
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    logger.error(err);
+    return res.status(500).json({ error: 'Failed to fetch targeted pay values' });
+  }
+});
+
+router.post('/targeted-pay', async (req, res) => {
+  const { updates = [], updatedBy = 'incentive-admin' } = req.body || {};
+  if (!Array.isArray(updates) || !updates.length) {
+    return res.status(400).json({ error: 'No updates supplied' });
+  }
+
+  const conn = await req.app.locals.forecastPool.getConnection();
+  try {
+    await conn.beginTransaction();
+    for (const entry of updates) {
+      const teamId = Number(entry.team_id);
+      const fiscalYear = Number(entry.fiscal_year);
+      const targetedPay = Number(entry.targeted_pay);
+      if (!Number.isFinite(teamId) || !Number.isFinite(fiscalYear)) {
+        throw new Error('Invalid targeted pay payload');
+      }
+      const payValue = Number.isFinite(targetedPay) ? targetedPay : 40000;
+      await conn.query(
+        `INSERT INTO incentive_targeted_pay
+           (team_id, fiscal_year, targeted_pay, updated_by)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           targeted_pay = VALUES(targeted_pay),
+           updated_by   = VALUES(updated_by),
+           updated_at   = NOW()`,
+        [teamId, fiscalYear, payValue, entry.updated_by || updatedBy]
+      );
+    }
+    await conn.commit();
+    return res.json({ success: true });
+  } catch (err) {
+    await conn.rollback();
+    logger.error(err);
+    return res.status(500).json({ error: err.message || 'Failed to save targeted pay values' });
+  } finally {
+    conn.release();
+  }
+});
+
+/* ========================================================================== */
+/* 5. FORECAST % TO TARGET OVERRIDES                                         */
+/* ========================================================================== */
+
+router.get('/percent-targets', async (req, res) => {
+  try {
+    const pool = req.app.locals.forecastPool;
+    const versionId = Number(req.query.versionId);
+    const teamId = Number(req.query.teamId);
+    const params = [];
+    const where = [];
+    if (Number.isFinite(versionId)) {
+      where.push('version_id = ?');
+      params.push(versionId);
+    }
+    if (Number.isFinite(teamId)) {
+      where.push('team_id = ?');
+      params.push(teamId);
+    }
+    const sql = `
+      SELECT team_id, version_id, qs_percent, bg_percent, ar_percent
+        FROM incentive_percent_targets
+        ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    `;
+    const [rows] = await pool.query(sql, params);
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    logger.error(err);
+    return res.status(500).json({ error: 'Failed to fetch percent targets' });
+  }
+});
+
+router.post('/percent-targets', async (req, res) => {
+  const { updates = [], updatedBy = 'incentive-admin' } = req.body || {};
+  if (!Array.isArray(updates) || !updates.length) {
+    return res.status(400).json({ error: 'No updates supplied' });
+  }
+
+  const conn = await req.app.locals.forecastPool.getConnection();
+  try {
+    const versionIds = Array.from(new Set(
+      updates
+        .map(entry => (entry && entry.version_id != null ? Number(entry.version_id) : 0))
+        .filter(v => Number.isFinite(v) && v > 0)
+    ));
+    for (const versionId of versionIds) {
+      if (await rejectIncentiveWriteIfLocked(res, conn, versionId)) {
+        return;
+      }
+    }
+
+    await conn.beginTransaction();
+    for (const entry of updates) {
+      const teamId = Number(entry.team_id);
+      if (!Number.isFinite(teamId)) {
+        throw new Error('Invalid percent target payload');
+      }
+      const versionId = entry.version_id != null ? Number(entry.version_id) : 0;
+      const qsPercent = Number(entry.qs_percent);
+      const bgPercent = Number(entry.bg_percent);
+      const arPercent = Number(entry.ar_percent);
+      const qsValue = Number.isFinite(qsPercent) ? qsPercent : 1.08;
+      const bgValue = Number.isFinite(bgPercent) ? bgPercent : 1.08;
+      const arValue = Number.isFinite(arPercent) ? arPercent : 1.08;
+
+      await conn.query(
+        `INSERT INTO incentive_percent_targets
+           (team_id, version_id, qs_percent, bg_percent, ar_percent, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           qs_percent = VALUES(qs_percent),
+           bg_percent = VALUES(bg_percent),
+           ar_percent = VALUES(ar_percent),
+           updated_by = VALUES(updated_by),
+           updated_at = NOW()`,
+        [teamId, versionId, qsValue, bgValue, arValue, entry.updated_by || updatedBy]
+      );
+    }
+    await conn.commit();
+    return res.json({ success: true });
+  } catch (err) {
+    await conn.rollback();
+    logger.error(err);
+    return res.status(500).json({ error: err.message || 'Failed to save percent targets' });
   } finally {
     conn.release();
   }

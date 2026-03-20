@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -8,38 +8,48 @@
     <style>
         
         body {
-            background-color: #f7f7f7;
+            background-color: #f5f6f8;
             margin: 0;
-            padding: 0;
+            padding: 24px 0 140px;
             font-family: Arial, sans-serif;
-            overflow-y: auto;      
-            height: auto;          
-            min-height: 100vh;     /* Ensure minimum viewport height */
+            min-height: 1400px;
         }
-        
-        
-        .admin-header {
-            background-color: var(--boa-dark-blue);
-            color: white;
-            padding: 20px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-            position: sticky;      
-            top: 0;               
-            z-index: 100;          /* Ensure header stays on top */
-        }
-        
-        .admin-header h1 {
-            margin: 0;
-            font-size: 24px;
-        }
-        
-        
+
         .admin-container {
-            max-width: 1400px;
-            margin: 20px auto;
-            padding: 0 20px;
-            padding-bottom: 40px;  
-            
+            max-width: 1280px;
+            margin: 24px auto 48px;
+            padding: 0 32px 48px;
+        }
+
+        .admin-topbar {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 6px;
+            margin-bottom: 24px;
+        }
+
+        .admin-topbar h1 {
+            margin: 0;
+            font-size: 30px;
+            color: var(--boa-dark-blue);
+        }
+
+        .admin-subtitle {
+            margin: 0;
+            color: #5c6b7a;
+            font-size: 15px;
+        }
+
+        .version-switcher {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #fff;
+            border-radius: 10px;
+            padding: 10px 16px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.08);
         }
         
         .admin-section {
@@ -86,17 +96,34 @@
             height: 20px;
             cursor: pointer;
         }
+
+        .compensable-scroll {
+            max-height: 60vh;
+            overflow-y: auto;
+            padding-right: 12px;
+            margin-top: 12px;
+        }
+
+        .compensable-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .compensable-scroll::-webkit-scrollbar-thumb {
+            background: #c6d4e3;
+            border-radius: 4px;
+        }
         
         .ratios-table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            margin-top: 16px;
+            table-layout: fixed;
         }
         
         .ratios-table th,
         .ratios-table td {
             border: 1px solid #ddd;
-            padding: 8px;
+            padding: 10px 14px;
             text-align: center;
         }
         
@@ -104,12 +131,231 @@
             background: var(--boa-dark-blue);
             color: white;
         }
+
+        .ratios-table th.ratio-col,
+        .ratios-table td:first-child {
+            width: 28%;
+            text-align: left;
+        }
+
+        .ratios-table th.value-col,
+        .ratios-table td:nth-child(2) {
+            width: 15%;
+        }
+
+        .ratios-table th.desc-col,
+        .ratios-table td:nth-child(3) {
+            width: 42%;
+            text-align: left;
+        }
+
+        .value-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        
         
         .ratios-table input[type="number"] {
             width: 80px;
             padding: 5px;
             text-align: center;
             border: 1px solid var(--boa-blue);
+        }
+
+        .expense-grid-wrapper {
+            margin-top: 10px;
+            overflow-x: auto;
+        }
+
+        .expense-grid-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 720px;
+        }
+
+        .expense-grid-table th,
+        .expense-grid-table td {
+            border: 1px solid #d0d5dd;
+            padding: 8px 10px;
+            text-align: center;
+        }
+
+        .expense-grid-table thead th {
+            background: var(--boa-dark-blue);
+            color: #fff;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .expense-grid-table tbody tr:nth-child(even) {
+            background: #f8fafc;
+        }
+
+        .expense-grid-table input[type="number"],
+        .expense-grid-table input[type="text"] {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 6px 8px;
+            border: 1px solid var(--boa-blue);
+            border-radius: 4px;
+            text-align: right;
+        }
+
+        .expense-grid-table td.percent-locked {
+            background: #f2f4f7;
+        }
+
+        .percent-display {
+            display: block;
+            width: 100%;
+            text-align: center;
+            font-weight: 600;
+            color: #344054;
+        }
+
+        .expense-grid-actions {
+            margin-top: 16px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .expense-grid-actions .secondary-btn {
+            background: #fff;
+            color: var(--boa-blue);
+            border: 1px solid var(--boa-blue);
+            padding: 8px 18px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .expense-grid-actions .secondary-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .targeted-pay-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+
+        .targeted-pay-table th,
+        .targeted-pay-table td {
+            border: 1px solid #d0d5dd;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .targeted-pay-table th {
+            background: var(--boa-dark-blue);
+            color: #fff;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .targeted-pay-table td:first-child {
+            text-align: left;
+            font-weight: 600;
+            background: #f1f5f9;
+        }
+
+        .targeted-pay-input {
+            width: 100%;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid var(--boa-blue);
+            text-align: right;
+            box-sizing: border-box;
+        }
+
+        .targeted-pay-actions {
+            margin-top: 16px;
+            margin-bottom: 24px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .scrollable-table-wrapper {
+            max-height: 52vh;
+            overflow-y: auto;
+            padding-right: 12px;
+            margin-bottom: 20px;
+        }
+
+        .scrollable-table-wrapper::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .scrollable-table-wrapper::-webkit-scrollbar-thumb {
+            background: #c6d4e3;
+            border-radius: 4px;
+        }
+
+        .wm-ratio-inputs,
+        .value-duo {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .value-duo {
+            align-items: stretch;
+        }
+
+        .wm-ratio-inputs .wm-auto,
+        .wm-ratio-inputs .wm-override,
+        .value-duo .value-auto,
+        .value-duo .value-override,
+        .value-auto .value-label,
+        .value-override .value-label {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+
+        .wm-ratio-inputs .wm-auto input[readonly],
+        .value-auto input[readonly] {
+            background: #eef1f5;
+            border-color: #cbd5e1;
+            cursor: not-allowed;
+        }
+
+        .value-duo label,
+        .wm-ratio-inputs label {
+            font-size: 11px;
+            color: #5c6b7a;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .value-duo input,
+        .wm-ratio-inputs input {
+            width: 100%;
+            text-align: center;
+        }
+
+        .value-duo input::-webkit-outer-spin-button,
+        .value-duo input::-webkit-inner-spin-button,
+        .wm-ratio-inputs input::-webkit-outer-spin-button,
+        .wm-ratio-inputs input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .ratio-explanation {
+            font-size: 11px;
+            color: #475467;
+            margin-top: 4px;
+        }
+
+        .value-duo input[type="number"],
+        .wm-ratio-inputs input[type="number"] {
+            -moz-appearance: textfield;
         }
         
         .save-btn {
@@ -129,22 +375,28 @@
         
         .tab-nav {
             display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 24px;
+            justify-content: center;
         }
         
         .tab-btn {
-            padding: 10px 20px;
-            background: var(--boa-light-gray);
-            border: 2px solid transparent;
+            padding: 10px 22px;
+            background: #fff;
+            border: 1px solid #d0d5dd;
             cursor: pointer;
-            border-radius: 4px;
-            font-weight: 500;
+            border-radius: 20px;
+            font-weight: 600;
+            color: #475467;
+            transition: all 0.2s ease;
         }
         
         .tab-btn.active {
             background: var(--boa-blue);
             color: white;
+            border-color: var(--boa-blue);
+            box-shadow: 0 4px 12px rgba(0,102,204,0.2);
         }
         
         .tab-content {
@@ -212,23 +464,23 @@
     </style>
 </head>
 <body>
-    <div class="admin-header">
-        <h1>Incentive Configuration Admin Panel</h1>
-    </div>
-    
     <div class="admin-container">
-        <div class="tab-nav">
-            <button class="tab-btn active" onclick="switchAdminTab('compensable')">Compensable Metrics</button>
-            <button class="tab-btn" onclick="switchAdminTab('ratios')">Quality Ratios</button>
-            <div style="margin-left:auto; display:flex; gap:10px; align-items:center;">
-                <label for="versionSelect"><strong>Forecast Version:</strong></label>
-                <select id="versionSelect" onchange="loadTeamRatios()"></select>
+        <div class="admin-topbar">
+            <div>
+                <h1>Incentive Configuration Admin Panel</h1>
+                <p class="admin-subtitle">Manage compensable metrics, quality ratios, expense grids, and other plan inputs.</p>
             </div>
+        </div>
+        <div class="tab-nav">
+            <button class="tab-btn active" data-tab="compensable" onclick="switchAdminTab('compensable')">Compensable Metrics</button>
+            <button class="tab-btn" data-tab="ratios" onclick="switchAdminTab('ratios')">Quality Ratios</button>
+            <button class="tab-btn" data-tab="expense" onclick="switchAdminTab('expense')">Expense Grids</button>
+            <button class="tab-btn" data-tab="percent" onclick="switchAdminTab('percent')">% to Target</button>
+            <button class="tab-btn" data-tab="targeted-pay" onclick="switchAdminTab('targeted-pay')">Targeted Pay</button>
         </div>
         <div id="readOnlyBanner" class="note" style="display:none; display:flex; align-items:center; gap:10px;">
             <span>Read Only: You are viewing a non-current forecast version. Editing is disabled.</span>
-            <span title="Editing is permitted only on the current forecast version. Use the selector to switch back to the current version to enable editing." style="cursor:help; padding:2px 6px; border-radius:50%; background:#0066cc; color:white; font-weight:bold;">i</span>
-            <button id="switchCurrentBtn" class="save-btn" style="padding:6px 12px; font-size:12px;">Switch to Current</button>
+            <span title="Editing is permitted only on the current forecast version." style="cursor:help; padding:2px 6px; border-radius:50%; background:#0066cc; color:white; font-weight:bold;">i</span>
         </div>
         
         <div id="successMessage" class="success-message"></div>
@@ -237,24 +489,26 @@
         <!-- Compensable Metrics Tab -->
         <div id="compensable-tab" class="tab-content active">
     <div class="admin-section">
-        <h2>Compensable Metrics Configuration</h2>
-        <p>Check the metrics that each team gets compensated on:</p>
         
-        <div style="margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 14px; color: #666;">Changes are saved automatically per team</span>
+        <div class="note" style="margin-top:-4px;">
+            Check the metrics that each team gets compensated on. Changes are saved and applied automatically.
         </div>
         
-        <div class="metrics-grid" id="metricsGrid">
-            <!-- Headers -->
-            <div class="header">TEAMS</div>
-            <div class="header">INVESTMENT<br>ACCOUNTS</div>
-            <div class="header">INVESTMENT<br>ASSETS</div>
-            <div class="header">BANKING<br>ACCOUNTS</div>
-            <div class="header">BANKING<br>ASSETS</div>
-            <div class="header">WEALTH MGMT<br>ACCOUNTS</div>
-            <div class="header">WEALTH MGMT<br>ASSETS</div>
-            
-            <!-- Team rows will be dynamically generated -->
+        
+        
+        <div class="compensable-scroll">
+            <div class="metrics-grid" id="metricsGrid">
+                <!-- Headers -->
+                <div class="header">TEAMS</div>
+                <div class="header">INVESTMENT<br>ACCOUNTS</div>
+                <div class="header">INVESTMENT<br>ASSETS</div>
+                <div class="header">BANKING<br>ACCOUNTS</div>
+                <div class="header">BANKING<br>ASSETS</div>
+                <div class="header">WEALTH MGMT<br>ACCOUNTS</div>
+                <div class="header">WEALTH MGMT<br>ASSETS</div>
+                
+                <!-- Team rows will be dynamically generated -->
+            </div>
         </div>
         
         <!-- Autosave enabled: no manual save button -->
@@ -264,8 +518,8 @@
         <!-- Quality Ratios Tab -->
         <div id="ratios-tab" class="tab-content">
             <div class="admin-section">
-                <h2>Quality Ratios Configuration</h2>
-                <p>Enter quality ratios as percentages (e.g., 80 for 80%):</p>
+                
+                
                 
                 <!-- FIX #5: Simplified selector - removed period and version -->
                 <div class="team-selector">
@@ -277,15 +531,22 @@
                 
                 
                 <div class="note">
-                    <strong>Note:</strong> Quality ratios apply to all periods for the selected team.
+                    <strong>Note:</strong> Quality ratios apply to all forecasted periods for the selected team. All quality ratios prefill with a trailing 12-month auto value. If you want a different one, enter an override to replace the auto percentage.
+                
                 </div>
+                
                 
                 <table class="ratios-table">
                     <thead>
                         <tr>
-                            <th>Ratio Type</th>
-                            <th>Value (%)</th>
-                            <th>Description</th>
+                            <th class="ratio-col">Ratio Type</th>
+                            <th class="value-col">
+                                <div class="value-header">
+                                    <span>Value (%)</span>
+                                    
+                                </div>
+                            </th>
+                            <th class="desc-col">Description</th>
                         </tr>
                     </thead>
                     <tbody id="ratiosTableBody">
@@ -296,6 +557,89 @@
                 <!-- Autosave enabled: no manual save button -->
             </div>
         </div>
+
+        <!-- Expense Grids Tab -->
+        <div id="expense-tab" class="tab-content">
+            <div class="admin-section">
+                
+
+                <div class="team-selector">
+                    <label for="expenseTeamSelect">Select Team:</label>
+                    <select id="expenseTeamSelect"></select>
+                </div>
+
+                <div class="note">
+                    Enter values that are increasingly higher. You can paste ranges from Excel directly into the table.
+                </div>
+
+                <div class="expense-grid-wrapper">
+                    <table class="expense-grid-table">
+                        <thead>
+                            <tr>
+                                <th>Min % to Target</th>
+                                <th>Max % to Target</th>
+                                <th>QS ($)</th>
+                                <th>BG (%)</th>
+                                <th>AR (%)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expenseGridBody">
+                            <!-- Rows injected dynamically -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="expense-grid-actions" style="justify-content:flex-start;">
+                    <span id="expenseGridStatus" style="font-size:13px; color:#475467;"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- % to Target Tab -->
+        <div id="percent-tab" class="tab-content">
+            <div class="admin-section">
+                <div class="note" style="margin-top:-4px;">
+                    Set forecast for "% to Target". Values are percentages (e.g., enter 108 for 108%).
+                </div>
+                <div class="scrollable-table-wrapper">
+                    <table class="targeted-pay-table percent-target-table">
+                        <thead>
+                            <tr>
+                                <th>Team</th>
+                                <th>QS % to Target</th>
+                                <th>BG % to Target</th>
+                                <th>AR % to Target</th>
+                            </tr>
+                        </thead>
+                        <tbody id="percentTargetBody"></tbody>
+                    </table>
+                </div>
+                <div class="targeted-pay-actions">
+                    <span id="percentTargetStatus" style="font-size:13px; color:#475467; visibility:hidden;"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Targeted Pay Tab -->
+        <div id="targeted-pay-tab" class="tab-content">
+            <div class="admin-section">
+                
+                <div class="note" style="margin-top:-4px;">
+                    Set annual targeted pay amounts for each team. These are used on the Incentive tab to calculate % to Targeted Pay.
+                </div>
+
+                <div class="scrollable-table-wrapper">
+                    <table class="targeted-pay-table">
+                        <thead id="targetedPayHeader"></thead>
+                        <tbody id="targetedPayBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="targeted-pay-actions">
+                    <span id="targetedPayStatus" style="font-size:13px; color:#475467; visibility:hidden;"></span>
+                </div>
+            </div>
+        </div>
     </div>
     
     <script>
@@ -303,6 +647,225 @@
         let teams = [];
         let currentCompensableMetrics = {};
         let currentQualityRatios = {};
+        let currentExpenseGrid = [];
+        let expenseGridDirty = false;
+        let expenseGridSaving = false;
+        let expenseAutoSaveTimer = null;
+        const EXPENSE_AUTO_SAVE_DELAY = 800;
+        let targetedPayValues = {};
+        let targetedPayDirty = false;
+        let targetedPaySaving = false;
+        let targetedPaySaveTimer = null;
+        const TARGETED_PAY_AUTO_SAVE_DELAY = 800;
+        let targetedPayTouched = false;
+        let percentTargetValues = {};
+        let percentTargetsDirty = false;
+        let percentTargetsSaving = false;
+        let percentTargetSaveTimer = null;
+        const PERCENT_TARGET_AUTO_SAVE_DELAY = 800;
+        let percentTargetsLoaded = false;
+        let percentTargetsTouched = false;
+        const teamDataCache = {};
+        const wmAutoRatioCache = {};
+        const MONOTONIC_EXPENSE_FIELDS = ['qs_multiplier', 'bg_multiplier', 'ar_multiplier'];
+        const EXPENSE_FIELD_LABELS = {
+            qs_multiplier: 'QS ($)',
+            bg_multiplier: 'BG (%)',
+            ar_multiplier: 'AR (%)'
+        };
+        const QUALITY_RATIO_TYPES = [
+            { type: 'investment_accounts', desc: 'Investment Accounts Quality', autoKey: 'investment_accounts', mode: 'final', min: 0, max: 200, step: 1, precision: 0, label: 'Override Value (%)' },
+            { type: 'investment_assets', desc: 'Investment Assets Quality', autoKey: 'investment_assets', mode: 'final', min: 0, max: 200, step: 1, precision: 0, label: 'Override Value (%)' },
+            { type: 'banking_accounts', desc: 'Banking Accounts Quality', autoKey: 'banking_accounts', mode: 'final', min: 0, max: 200, step: 1, precision: 0, label: 'Override Value (%)' },
+            { type: 'banking_assets', desc: 'Banking Assets Quality', autoKey: 'banking_assets', mode: 'final', min: 0, max: 200, step: 1, precision: 0, label: 'Override Value (%)' },
+            { type: 'wealth_accounts', desc: 'Wealth Management Accounts Quality', autoKey: 'wmQs', mode: 'final', min: 0, max: 200, step: 0.1, precision: 1, label: 'Override Value (%)' },
+            { type: 'wealth_assets', desc: 'Wealth Management Assets Quality', autoKey: 'wmBg', mode: 'final', min: 0, max: 200, step: 0.1, precision: 1, label: 'Override Value (%)' },
+            { type: 'ar_ramp', desc: 'AR Ramp Rate', autoKey: 'ar_ramp', mode: 'final', min: 0, max: 100, step: 0.1, precision: 1, label: 'Override Value (%)' }
+        ];
+        function seededRatio(seed, min = 0.02, max = 0.06) {
+            let hash = 0;
+            for (let i = 0; i < seed.length; i++) {
+                hash = Math.imul(31, hash) + seed.charCodeAt(i) | 0;
+            }
+            const normalized = (Math.sin(hash) + 1) / 2;
+            return min + (max - min) * normalized;
+        }
+
+        function parseMonthLabel(label) {
+            const [mon, yr] = String(label).split('-');
+            const monthIndex = MONTH_ABBR.indexOf(mon);
+            const year = parseInt(yr, 10);
+            return { monthIndex, year: year >= 0 && year < 100 ? 2000 + year : year };
+        }
+
+        function sortMonthsChronologically(keys = []) {
+            return [...keys].sort((a, b) => {
+                const pa = parseMonthLabel(a);
+                const pb = parseMonthLabel(b);
+                if (!Number.isFinite(pa.monthIndex) || !Number.isFinite(pb.monthIndex)) return 0;
+                if (pa.year !== pb.year) return pa.year - pb.year;
+                return pa.monthIndex - pb.monthIndex;
+            });
+        }
+
+        async function fetchTeamDataForRatios(teamId, versionId) {
+            const cacheKey = `${teamId}_${versionId}`;
+            if (teamDataCache[cacheKey]) {
+                return teamDataCache[cacheKey];
+            }
+            const response = await fetch(`/api/team-data/${teamId}/${versionId}`);
+            const json = await response.json();
+            const transformed = transformTeamDataForRatios(json.data || []);
+            teamDataCache[cacheKey] = transformed;
+            return transformed;
+        }
+
+        function transformTeamDataForRatios(rows) {
+            const result = { forecastStatus: {}, productionTotals: {} };
+            rows.forEach(row => {
+                const period = row.period_string;
+                result.forecastStatus[period] = row.data_type === 'forecast' ? 'Forecast' : 'Actual';
+                const headcount = ['pg1_headcount','pg2_headcount','pg3_headcount','pg4_headcount','pg5_headcount','pg6_headcount','pg7_headcount']
+                    .reduce((sum, key) => sum + (parseInt(row[key]) || 0), 0);
+                const businessDays = parseInt(row.business_days, 10) || 21;
+                const productivity = parseFloat(row.productivity || 0);
+                const totalAccounts = (headcount * productivity * businessDays) / 5;
+                const mixes = {
+                    A: parseFloat(row.product_a_mix) || 0,
+                    B: parseFloat(row.product_b_mix) || 0,
+                    C: parseFloat(row.product_c_mix) || 0,
+                    D: parseFloat(row.product_d_mix) || 0
+                };
+                const abpa = {
+                    A: parseFloat(row.product_a_abpa) || 0,
+                    B: parseFloat(row.product_b_abpa) || 0,
+                    C: parseFloat(row.product_c_abpa) || 0,
+                    D: parseFloat(row.product_d_abpa) || 0
+                };
+                let investmentAccounts = 0;
+                let investmentAssets = 0;
+                ['A','B','C','D'].forEach(p => {
+                    const accounts = Math.round(totalAccounts * mixes[p]);
+                    investmentAccounts += accounts;
+                    investmentAssets += accounts * abpa[p];
+                });
+                const bankingProducts = ['aa','bb','cc','dd','ee'];
+                let bankingAccounts = 0;
+                let bankingAssets = 0;
+                bankingProducts.forEach(key => {
+                    const prod = parseFloat(row[`product_${key}_productivity`] || 0);
+                    const val = parseFloat(row[`product_${key}_abpa`] || 0);
+                    const accounts = Math.round((headcount * prod * businessDays) / 5);
+                    bankingAccounts += accounts;
+                    bankingAssets += accounts * val;
+                });
+                const productCBalance =
+                    Number(row.product_c_balance) ||
+                    Math.round(totalAccounts * mixes.C) * abpa.C || 0;
+                const arEnrollPerAdvisor = parseFloat(row.ar_enroll_per_advisor);
+                const arRampPerAdvisor = parseFloat(row.ar_ramp_per_advisor);
+                const arEnrollTotal = Number.isFinite(arEnrollPerAdvisor)
+                    ? arEnrollPerAdvisor * headcount
+                    : productCBalance;
+                const arRampTotal = Number.isFinite(arRampPerAdvisor)
+                    ? arRampPerAdvisor * headcount
+                    : null;
+
+                result.productionTotals[period] = {
+                    productiveHeadcount: headcount,
+                    totalInvestmentAccounts: Math.round(totalAccounts),
+                    investmentAccounts,
+                    investmentAssets,
+                    bankingAccounts,
+                    bankingAssets,
+                    arEnrollTotal,
+                    arRampTotal
+                };
+            });
+            return result;
+        }
+
+        const formatPercent = (value, digits = 1) => {
+            if (!Number.isFinite(value)) return '';
+            return (value * 100).toFixed(digits);
+        };
+
+
+        async function getAutoRatios(teamId, versionId) {
+            const cacheKey = `${teamId}_${versionId}`;
+            if (wmAutoRatioCache[cacheKey]) {
+                return wmAutoRatioCache[cacheKey];
+            }
+            const teamData = await fetchTeamDataForRatios(teamId, versionId);
+            const months = sortMonthsChronologically(Object.keys(teamData.forecastStatus || {}));
+            const actualMonths = months.filter(month => teamData.forecastStatus[month] === 'Actual');
+            const trailing = actualMonths.slice(-12);
+            let investQsSum = 0;
+            let wmQsSum = 0;
+            let investBgSum = 0;
+            let wmBgSum = 0;
+            let arEnrollSum = 0;
+            let arRampSum = 0;
+            trailing.forEach(month => {
+                const totals = teamData.productionTotals?.[month];
+                if (!totals) return;
+                const investmentQs = (totals.investmentAccounts || 0) + (totals.bankingAccounts || 0);
+                const investmentBg = (totals.investmentAssets || 0) + (totals.bankingAssets || 0);
+                if (investmentQs > 0) {
+                    const ratio = seededRatio(`wm-qs-${teamId}-${month}`);
+                    wmQsSum += investmentQs * ratio;
+                    investQsSum += investmentQs;
+                }
+                if (investmentBg > 0) {
+                    const ratioBg = seededRatio(`wm-bg-${teamId}-${month}`);
+                    wmBgSum += investmentBg * ratioBg;
+                    investBgSum += investmentBg;
+                }
+                const enroll = Number(totals?.arEnrollTotal);
+                const ramp = Number(totals?.arRampTotal);
+                if (Number.isFinite(enroll) && enroll > 0) {
+                    arEnrollSum += enroll;
+                }
+                if (Number.isFinite(ramp) && ramp > 0) {
+                    arRampSum += ramp;
+                }
+            });
+            const computed = {
+                wmQs: investQsSum > 0 ? wmQsSum / investQsSum : null,
+                wmBg: investBgSum > 0 ? wmBgSum / investBgSum : null
+            };
+            if (arEnrollSum > 0 && arRampSum > 0) {
+                computed.ar_ramp = arRampSum / arEnrollSum;
+            }
+
+            const mockSpecs = [
+                { key: 'investment_accounts', min: 0.8, max: 1.0 },
+                { key: 'investment_assets', min: 0.8, max: 1.0 },
+                { key: 'banking_accounts', min: 0.8, max: 1.0 },
+                { key: 'banking_assets', min: 0.8, max: 1.0 },
+                { key: 'ar_ramp', min: 0.02, max: 0.06 }
+            ];
+            mockSpecs.forEach(spec => {
+                if (spec.key === 'ar_ramp' && Number.isFinite(computed.ar_ramp) && computed.ar_ramp > 0) {
+                    return;
+                }
+                const seed = `${spec.key}-${teamId}-${versionId}`;
+                if (!Number.isFinite(computed[spec.key]) || computed[spec.key] <= 0) {
+                    computed[spec.key] = seededRatio(seed, spec.min, spec.max);
+                }
+            });
+
+            wmAutoRatioCache[cacheKey] = computed;
+            return computed;
+        }
+
+        const TARGETED_PAY_START_YEAR = 2023;
+        const TARGETED_PAY_END_YEAR = 2025;
+        const TARGETED_PAY_YEARS = [];
+        for (let y = TARGETED_PAY_START_YEAR; y <= TARGETED_PAY_END_YEAR; y++) {
+            TARGETED_PAY_YEARS.push(y);
+        }
+        const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
         
         async function initializeAdmin() {
             try {
@@ -311,29 +874,28 @@
                 const data = await response.json();
                 teams = data.data || data; // Handle both response formats
 
-                // Populate team selector
+                // Populate team selectors
                 const teamSelect = document.getElementById('teamSelect');
+                const expenseTeamSelect = document.getElementById('expenseTeamSelect');
                 teamSelect.innerHTML = '';
+                if (expenseTeamSelect) {
+                    expenseTeamSelect.innerHTML = '';
+                }
                 teams.forEach(team => {
                     const option = document.createElement('option');
                     option.value = team.team_id;
                     option.textContent = team.team_name;
-                    teamSelect.appendChild(option);
+                    teamSelect.appendChild(option.cloneNode(true));
+                    if (expenseTeamSelect) {
+                        expenseTeamSelect.appendChild(option);
+                    }
                 });
 
                 // Load forecast versions and populate selector
                 const vRes = await fetch('/api/forecasts/versions');
                 const vJson = await vRes.json();
                 const versions = vJson.data || [];
-                const versionSelect = document.getElementById('versionSelect');
-                versionSelect.innerHTML = '';
-                versions.forEach(v => {
-                    const opt = document.createElement('option');
-                    opt.value = v.version_id;
-                    opt.textContent = v.version_name;
-                    versionSelect.appendChild(opt);
-                });
-                // Determine current app version and set defaults
+                // Determine current app version
                 let currentVersionId = null;
                 try {
                     const curRes = await fetch('/api/forecasts/current');
@@ -346,19 +908,8 @@
                 } catch (e) { /* ignore */ }
                 window.__currentVersionId = currentVersionId;
 
-                // Read query params to sync with main app selections
                 const params = new URLSearchParams(window.location.search);
-                const qpVersion = params.get('versionId');
                 const qpTeam = params.get('teamId');
-
-                // Set version select: prefer query param, else current, else first
-                if (qpVersion && Array.from(versionSelect.options).some(o => o.value === qpVersion)) {
-                    versionSelect.value = qpVersion;
-                } else if (currentVersionId && Array.from(versionSelect.options).some(o => o.value === currentVersionId)) {
-                    versionSelect.value = currentVersionId;
-                } else if (versions.length) {
-                    versionSelect.value = versions[0].version_id;
-                }
 
                 // Load compensable metrics
                 await loadCompensableMetrics();
@@ -368,7 +919,30 @@
                     if (qpTeam && Array.from(teamSelect.options).some(o => o.value === qpTeam)) {
                         teamSelect.value = qpTeam;
                     }
+                    if (expenseTeamSelect) {
+                        if (qpTeam && Array.from(expenseTeamSelect.options).some(o => o.value === qpTeam)) {
+                            expenseTeamSelect.value = qpTeam;
+                        } else if (expenseTeamSelect.options.length > 0) {
+                            expenseTeamSelect.value = expenseTeamSelect.options[0].value;
+                        }
+                    }
+                    if (expenseTeamSelect) {
+                        expenseTeamSelect.addEventListener('change', () => loadExpenseGrid());
+                    }
+                    const addRowBtn = document.getElementById('addExpenseRowBtn');
+                    const saveGridBtn = document.getElementById('saveExpenseGridBtn');
+                    if (addRowBtn && !addRowBtn.dataset.bound) {
+                        addRowBtn.addEventListener('click', addExpenseGridRow);
+                        addRowBtn.dataset.bound = 'true';
+                    }
+                    if (saveGridBtn && !saveGridBtn.dataset.bound) {
+                        saveGridBtn.addEventListener('click', saveExpenseGrid);
+                        saveGridBtn.dataset.bound = 'true';
+                    }
                     await loadTeamRatios();
+                    await loadExpenseGrid();
+                    await loadTargetedPay();
+                    await loadPercentTargets();
                 }
                 enforceReadOnly();
             } catch (error) {
@@ -377,21 +951,777 @@
         }
         
         function switchAdminTab(tab) {
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === tab);
+            });
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-            
-            if (tab === 'compensable') {
-                document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
-                document.getElementById('compensable-tab').classList.add('active');
-            } else {
-                document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
-                document.getElementById('ratios-tab').classList.add('active');
+
+            const activate = (id) => {
+                const el = document.getElementById(id);
+                if (el) el.classList.add('active');
+            };
+
+            switch (tab) {
+                case 'compensable':
+                    activate('compensable-tab');
+                    break;
+                case 'ratios':
+                    activate('ratios-tab');
+                    break;
+                case 'expense':
+                    activate('expense-tab');
+                    if (!expenseGridDirty && !expenseGridSaving && (!currentExpenseGrid || currentExpenseGrid.length === 0)) {
+                        loadExpenseGrid();
+                    }
+                    break;
+                case 'percent':
+                    activate('percent-tab');
+                    if (!percentTargetsLoaded) {
+                        loadPercentTargets();
+                    }
+                    break;
+                case 'targeted-pay':
+                    activate('targeted-pay-tab');
+                    if (!targetedPayDirty && !targetedPaySaving && (!targetedPayValues || !Object.keys(targetedPayValues).length)) {
+                        loadTargetedPay();
+                    }
+                    break;
+            }
+        }
+
+        const EXPENSE_GRID_FIELDS = ['range_min', 'range_max', 'qs_multiplier', 'bg_multiplier', 'ar_multiplier'];
+        const EXPENSE_PERCENT_FIELDS = new Set(['bg_multiplier', 'ar_multiplier']);
+
+        function formatExpenseValueForInput(field, rawValue) {
+            if (rawValue === null || rawValue === undefined || Number.isNaN(rawValue)) {
+                return '';
+            }
+            if (EXPENSE_PERCENT_FIELDS.has(field)) {
+                const percent = Number((rawValue * 100).toFixed(3));
+                return Number.isFinite(percent) ? String(percent) : '';
+            }
+            if (field === 'qs_multiplier') {
+                return Number.isFinite(rawValue) ? String(Number(rawValue.toFixed(2))) : '';
+            }
+            return Number.isFinite(rawValue) ? String(rawValue) : '';
+        }
+
+        function formatPercentDisplay(value) {
+            if (!Number.isFinite(value)) return '--';
+            const percentage = value * 100;
+            let text = Math.abs(percentage) >= 1 ? percentage.toFixed(2) : percentage.toFixed(2);
+            text = text.replace(/\.?0+$/, '');
+            if (text === '') text = '0';
+            return `${text}%`;
+        }
+
+        function parseExpenseFieldValue(field, rawValue) {
+            if (rawValue === null || rawValue === undefined || rawValue === '') {
+                return null;
+            }
+            const cleaned = String(rawValue).replace(/[^0-9.+-]/g, '');
+            if (cleaned === '') {
+                return null;
+            }
+            const numeric = Number(cleaned);
+            if (!Number.isFinite(numeric)) {
+                return null;
+            }
+            if (EXPENSE_PERCENT_FIELDS.has(field)) {
+                return numeric / 100;
+            }
+            return numeric;
+        }
+
+        function defaultExpenseGridRows() {
+            return [
+                { range_min: 0.0,    range_max: 0.2499, qs_multiplier: 52,  bg_multiplier: 0.00075, ar_multiplier: 0.00063 },
+                { range_min: 0.25,   range_max: 0.4999, qs_multiplier: 56,  bg_multiplier: 0.00080, ar_multiplier: 0.00067 },
+                { range_min: 0.5,    range_max: 0.6999, qs_multiplier: 60,  bg_multiplier: 0.00086, ar_multiplier: 0.00072 },
+                { range_min: 0.7,    range_max: 0.8499, qs_multiplier: 65,  bg_multiplier: 0.00094, ar_multiplier: 0.00079 },
+                { range_min: 0.85,   range_max: 0.9999, qs_multiplier: 71,  bg_multiplier: 0.00103, ar_multiplier: 0.00087 },
+                { range_min: 1.0,    range_max: 1.1499, qs_multiplier: 90,  bg_multiplier: 0.00130, ar_multiplier: 0.00110 },
+                { range_min: 1.15,   range_max: 1.2999, qs_multiplier: 99,  bg_multiplier: 0.00143, ar_multiplier: 0.00121 },
+                { range_min: 1.3,    range_max: 1.4999, qs_multiplier: 108, bg_multiplier: 0.00156, ar_multiplier: 0.00132 },
+                { range_min: 1.5,    range_max: 1.7499, qs_multiplier: 117, bg_multiplier: 0.00168, ar_multiplier: 0.00143 },
+                { range_min: 1.75,   range_max: 1.9999, qs_multiplier: 125, bg_multiplier: 0.00180, ar_multiplier: 0.00153 },
+                { range_min: 2.0,    range_max: 2.2499, qs_multiplier: 133, bg_multiplier: 0.00191, ar_multiplier: 0.00162 },
+                { range_min: 2.25,   range_max: null,   qs_multiplier: 140, bg_multiplier: 0.00201, ar_multiplier: 0.00170 }
+            ];
+        }
+
+        function createEmptyExpenseRow() {
+            return {
+                id: null,
+                range_min: null,
+                range_max: null,
+                qs_multiplier: null,
+                bg_multiplier: null,
+                ar_multiplier: null
+            };
+        }
+
+        function normalizeExpenseRow(row = {}) {
+            const toNumber = (value) => {
+                if (value === null || value === undefined || value === '') return null;
+                const parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : null;
+            };
+            return {
+                id: row.id ?? row.grid_id ?? row.expense_grid_id ?? null,
+                range_min: toNumber(row.range_min),
+                range_max: toNumber(row.range_max),
+                qs_multiplier: toNumber(row.qs_multiplier),
+                bg_multiplier: toNumber(row.bg_multiplier),
+                ar_multiplier: toNumber(row.ar_multiplier)
+            };
+        }
+
+        async function loadExpenseGrid() {
+            const teamSelect = document.getElementById('expenseTeamSelect');
+            const versionId = window.__currentVersionId;
+            if (!teamSelect || !teamSelect.value || !versionId) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/incentives/expense-grids?teamId=${teamSelect.value}&versionId=${versionId}`);
+                if (response.ok) {
+                    const json = await response.json();
+                    const rows = Array.isArray(json.data) ? json.data : (Array.isArray(json) ? json : []);
+                    currentExpenseGrid = (rows.length ? rows : defaultExpenseGridRows()).map(normalizeExpenseRow);
+                    expenseGridDirty = false;
+                    renderExpenseGrid();
+                    updateExpenseSaveState('');
+                } else if (response.status === 404) {
+                    currentExpenseGrid = defaultExpenseGridRows().map(normalizeExpenseRow);
+                    expenseGridDirty = false;
+                    renderExpenseGrid();
+                    updateExpenseSaveState('No saved grid found. Using defaults.');
+                } else {
+                    const errText = await response.text();
+                    throw new Error(errText || 'Unknown error');
+                }
+            } catch (error) {
+                showError('Failed to load expense grid: ' + error.message);
+                currentExpenseGrid = defaultExpenseGridRows().map(normalizeExpenseRow);
+                expenseGridDirty = false;
+                renderExpenseGrid();
+            }
+            enforceReadOnly();
+        }
+
+        function renderExpenseGrid() {
+            const tbody = document.getElementById('expenseGridBody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+
+            if (!Array.isArray(currentExpenseGrid) || !currentExpenseGrid.length) {
+                currentExpenseGrid = [createEmptyExpenseRow()];
+            }
+
+            currentExpenseGrid.forEach((row, index) => {
+                const tr = document.createElement('tr');
+                tr.dataset.index = index;
+
+                EXPENSE_GRID_FIELDS.forEach((field, colIndex) => {
+                    const td = document.createElement('td');
+                    const isLockedPercent = field === 'range_min' || field === 'range_max';
+                    if (isLockedPercent) {
+                        td.classList.add('percent-locked');
+                        const span = document.createElement('span');
+                        span.className = 'percent-display';
+                        span.textContent = formatPercentDisplay(row[field]);
+                        td.appendChild(span);
+                    } else {
+                        const input = document.createElement('input');
+                        input.type = 'number';
+                        if (field === 'qs_multiplier') {
+                            input.step = '1';
+                        } else if (EXPENSE_PERCENT_FIELDS.has(field)) {
+                            input.step = '0.001';
+                        } else {
+                            input.step = '0.0001';
+                        }
+                        input.min = '0';
+                        input.dataset.field = field;
+                        input.dataset.index = index;
+                        input.dataset.col = colIndex;
+                        input.value = formatExpenseValueForInput(field, row[field]);
+                        input.addEventListener('input', handleExpenseInputChange);
+                        input.addEventListener('paste', handleExpenseGridPaste);
+                        td.appendChild(input);
+                    }
+                    tr.appendChild(td);
+                });
+
+                tbody.appendChild(tr);
+            });
+
+            enforceReadOnly();
+            updateExpenseSaveState(expenseGridDirty ? 'Unsaved changes' : '');
+        }
+
+        function getMonotonicViolation(rows, field, index, value) {
+            if (!MONOTONIC_EXPENSE_FIELDS.includes(field) || !Number.isFinite(value)) {
+                return null;
+            }
+            const prevValue = rows[index - 1]?.[field];
+            if (Number.isFinite(prevValue) && value <= prevValue) {
+                return `${EXPENSE_FIELD_LABELS[field]} in row ${index + 1} must be greater than row ${index}.`;
+            }
+            const nextValue = rows[index + 1]?.[field];
+            if (Number.isFinite(nextValue) && value >= nextValue) {
+                return `${EXPENSE_FIELD_LABELS[field]} in row ${index + 1} must be less than row ${index + 2}.`;
+            }
+            return null;
+        }
+
+        function handleExpenseInputChange(event) {
+            const input = event.target;
+            const index = Number(input.dataset.index);
+            const field = input.dataset.field;
+            if (!currentExpenseGrid[index]) {
+                currentExpenseGrid[index] = createEmptyExpenseRow();
+            }
+            const previousValue = currentExpenseGrid[index][field];
+            const raw = input.value.trim();
+
+            if (raw === '' || raw === null) {
+                currentExpenseGrid[index][field] = null;
+                markExpenseGridDirty();
+                return;
+            }
+
+            const parsedValue = parseExpenseFieldValue(field, raw);
+            if (!Number.isFinite(parsedValue)) {
+                showError(`${EXPENSE_FIELD_LABELS[field] || field} in row ${index + 1} requires a numeric value.`);
+                input.value = formatExpenseValueForInput(field, previousValue);
+                // Restore the cursor to end so user can continue typing values like "80" after seeing the error.
+                requestAnimationFrame(() => {
+                    try { input.setSelectionRange(input.value.length, input.value.length); } catch (_) {}
+                });
+                return;
+            }
+
+            currentExpenseGrid[index][field] = parsedValue;
+            const formatted = formatExpenseValueForInput(field, currentExpenseGrid[index][field]);
+            input.value = formatted;
+            requestAnimationFrame(() => {
+                try { input.setSelectionRange(formatted.length, formatted.length); } catch (_) {}
+            });
+            markExpenseGridDirty();
+        }
+
+        function handleExpenseGridPaste(event) {
+            const input = event.target;
+            const startRow = Number(input.dataset.index);
+            const startCol = Number(input.dataset.col);
+            const clipboardData = event.clipboardData || window.clipboardData;
+            if (!clipboardData) return;
+            const text = clipboardData.getData('text');
+            if (!text) return;
+            event.preventDefault();
+
+            const rows = text.replace(/\r/g, '').split('\n');
+            rows.forEach((rowText, rowOffset) => {
+                if (!rowText.trim() && rows.length > 1) return;
+                const values = rowText.split('\t');
+                const targetRow = startRow + rowOffset;
+                if (!currentExpenseGrid[targetRow]) {
+                    currentExpenseGrid[targetRow] = createEmptyExpenseRow();
+                }
+                values.forEach((value, colOffset) => {
+                    const fieldIndex = startCol + colOffset;
+                    const field = EXPENSE_GRID_FIELDS[fieldIndex];
+                    if (!field) return;
+                    const parsed = parseExpenseFieldValue(field, value);
+                    currentExpenseGrid[targetRow][field] = parsed;
+                });
+            });
+
+            const issues = validateExpenseGridRows(currentExpenseGrid);
+            if (issues.length) {
+                showError(issues[0]);
+            }
+            renderExpenseGrid();
+            markExpenseGridDirty();
+        }
+
+        function addExpenseGridRow() {
+            currentExpenseGrid.push(createEmptyExpenseRow());
+            renderExpenseGrid();
+            markExpenseGridDirty();
+        }
+
+        function markExpenseGridDirty() {
+            expenseGridDirty = true;
+            const issues = validateExpenseGridRows(currentExpenseGrid);
+            if (issues.length) {
+                updateExpenseSaveState(issues[0]);
+                clearTimeout(expenseAutoSaveTimer);
+                return;
+            }
+            updateExpenseSaveState('Saving changes...');
+            scheduleSaveExpenseGrid();
+        }
+
+        function scheduleSaveExpenseGrid() {
+            clearTimeout(expenseAutoSaveTimer);
+            expenseAutoSaveTimer = setTimeout(() => saveExpenseGrid(), EXPENSE_AUTO_SAVE_DELAY);
+        }
+
+        function updateExpenseSaveState(message = '') {
+            const statusEl = document.getElementById('expenseGridStatus');
+            if (statusEl) {
+                statusEl.textContent = message;
+            }
+        }
+
+        function validateExpenseGridRows(rows) {
+            const issues = [];
+            rows.forEach((row, idx) => {
+                if (row.range_min === null || row.range_min === undefined) {
+                    issues.push(`Row ${idx + 1}: Min % to Target is required.`);
+                }
+                if (row.range_max !== null && row.range_max !== undefined && row.range_max < row.range_min) {
+                    issues.push(`Row ${idx + 1}: Max % must be greater than Min %.`);
+                }
+                MONOTONIC_EXPENSE_FIELDS.forEach(field => {
+                    const value = row[field];
+                    if (!Number.isFinite(value)) {
+                        issues.push(`Row ${idx + 1}: ${EXPENSE_FIELD_LABELS[field]} is required.`);
+                        return;
+                    }
+                    const violation = getMonotonicViolation(rows, field, idx, value);
+                    if (violation) {
+                        issues.push(violation);
+                    }
+                });
+            });
+            return issues;
+        }
+
+        async function saveExpenseGrid() {
+            const teamSelect = document.getElementById('expenseTeamSelect');
+            const versionId = window.__currentVersionId;
+            if (!teamSelect || !versionId) return;
+
+            const preparedRows = currentExpenseGrid.map((row, idx) => ({
+                id: row.id ?? null,
+                range_min: row.range_min,
+                range_max: row.range_max,
+                qs_multiplier: row.qs_multiplier,
+                bg_multiplier: row.bg_multiplier,
+                ar_multiplier: row.ar_multiplier,
+                sort_order: idx
+            }));
+
+            const validationIssues = validateExpenseGridRows(preparedRows);
+            if (validationIssues.length) {
+                showError(validationIssues.join(' '));
+                return;
+            }
+
+            expenseGridSaving = true;
+            updateExpenseSaveState('Saving...');
+
+            try {
+                const response = await fetch('/api/incentives/expense-grids', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        team_id: parseInt(teamSelect.value, 10),
+                        version_id: parseInt(versionId, 10),
+                        rows: preparedRows
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.error || 'Failed to save expense grid');
+                }
+
+                showSuccess('Expense grid saved successfully!');
+                expenseGridDirty = false;
+                updateExpenseSaveState('All changes saved');
+                try {
+                    const versionId = window.__currentVersionId || 0;
+                    const teamId = parseInt(teamSelect.value, 10);
+                    const bc = new BroadcastChannel('incentiveConfig');
+                    bc.postMessage({ type: 'expenseGrid', teamId, versionId, ts: Date.now() });
+                } catch (bcError) {
+                    const versionId = window.__currentVersionId || 0;
+                    const teamId = parseInt(teamSelect.value, 10);
+                    localStorage.setItem('incentive_config_updated', JSON.stringify({ type: 'expenseGrid', teamId, versionId, ts: Date.now() }));
+                }
+            } catch (error) {
+                showError('Error saving expense grid: ' + error.message);
+                updateExpenseSaveState('Failed to save changes');
+            } finally {
+                expenseGridSaving = false;
+            }
+        }
+        function ensureTargetedPayDefaults() {
+            teams.forEach(team => {
+                const teamId = team.team_id;
+                if (!targetedPayValues[teamId]) {
+                    targetedPayValues[teamId] = {};
+                }
+                TARGETED_PAY_YEARS.forEach(year => {
+                    if (!Number.isFinite(targetedPayValues[teamId][year])) {
+                        targetedPayValues[teamId][year] = 40000;
+                    }
+                });
+            });
+        }
+
+        function formatTargetedPayInputValue(value) {
+            if (!Number.isFinite(value)) return '';
+            return Math.round(value).toString();
+        }
+
+        function renderTargetedPayTable() {
+            ensureTargetedPayDefaults();
+            const thead = document.getElementById('targetedPayHeader');
+            const tbody = document.getElementById('targetedPayBody');
+            if (!thead || !tbody) return;
+
+            thead.innerHTML = '';
+            const headerRow = document.createElement('tr');
+            headerRow.innerHTML = `<th>Team</th>${TARGETED_PAY_YEARS.map(year => `<th>${year}</th>`).join('')}`;
+            thead.appendChild(headerRow);
+
+            tbody.innerHTML = '';
+            teams.forEach(team => {
+                const row = document.createElement('tr');
+                const labelCell = document.createElement('td');
+                labelCell.textContent = team.team_name;
+                row.appendChild(labelCell);
+
+                TARGETED_PAY_YEARS.forEach(year => {
+                    const td = document.createElement('td');
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.min = '0';
+                    input.step = '100';
+                    input.className = 'targeted-pay-input';
+                    input.dataset.teamId = team.team_id;
+                    input.dataset.year = year;
+                    input.value = formatTargetedPayInputValue(targetedPayValues[team.team_id][year]);
+                    input.addEventListener('input', handleTargetedPayInputChange);
+                    td.appendChild(input);
+                    row.appendChild(td);
+                });
+
+                tbody.appendChild(row);
+            });
+
+            updateTargetedPaySaveState(targetedPayDirty ? 'Unsaved changes' : 'All changes saved.');
+        }
+
+        function handleTargetedPayInputChange(event) {
+            const input = event.target;
+            const teamId = Number(input.dataset.teamId);
+            const year = Number(input.dataset.year);
+            const value = input.value.trim();
+            const numeric = Number(value.replace(/[^0-9.+-]/g, ''));
+            if (!targetedPayValues[teamId]) {
+                targetedPayValues[teamId] = {};
+            }
+            targetedPayValues[teamId][year] = Number.isFinite(numeric) ? numeric : null;
+            targetedPayDirty = true;
+            targetedPayTouched = true;
+            updateTargetedPaySaveState('Unsaved changes');
+            scheduleTargetedPayAutoSave();
+        }
+
+        function updateTargetedPaySaveState(message = '') {
+            const statusEl = document.getElementById('targetedPayStatus');
+            if (statusEl) {
+                const text = message || (targetedPayDirty ? 'Unsaved changes' : 'All changes saved.');
+                if (targetedPayTouched && text) {
+                    statusEl.style.visibility = 'visible';
+                    statusEl.textContent = text;
+                } else {
+                    statusEl.style.visibility = 'hidden';
+                    statusEl.textContent = '';
+                }
+            }
+            const inputs = document.querySelectorAll('.targeted-pay-input');
+            inputs.forEach(input => {
+                if (input && input.disabled) {
+                    // keep disabled state from enforceReadOnly
+                }
+            });
+        }
+
+        function scheduleTargetedPayAutoSave() {
+            if (targetedPaySaveTimer) {
+                clearTimeout(targetedPaySaveTimer);
+            }
+            targetedPaySaveTimer = setTimeout(() => saveTargetedPay(), TARGETED_PAY_AUTO_SAVE_DELAY);
+        }
+
+        async function loadTargetedPay() {
+            try {
+                const response = await fetch('/api/incentives/targeted-pay');
+                if (response.ok) {
+                    const json = await response.json();
+                    targetedPayValues = {};
+                    teams.forEach(team => {
+                        targetedPayValues[team.team_id] = {};
+                    });
+                    if (json && Array.isArray(json.data)) {
+                        json.data.forEach(row => {
+                            const teamId = Number(row.team_id);
+                            const year = Number(row.fiscal_year);
+                            const pay = Number(row.targeted_pay);
+                            if (!targetedPayValues[teamId]) {
+                                targetedPayValues[teamId] = {};
+                            }
+                            if (Number.isFinite(year) && Number.isFinite(pay)) {
+                                targetedPayValues[teamId][year] = pay;
+                            }
+                        });
+                    }
+                } else {
+                    targetedPayValues = {};
+                }
+            } catch (error) {
+                targetedPayValues = {};
+                console.error('Failed to load targeted pay:', error);
+                showError('Failed to load targeted pay: ' + error.message);
+            }
+            targetedPayDirty = false;
+            renderTargetedPayTable();
+        }
+
+        async function saveTargetedPay() {
+            if (targetedPaySaving) {
+                scheduleTargetedPayAutoSave();
+                return;
+            }
+            if (!targetedPayDirty) {
+                updateTargetedPaySaveState('All changes saved.');
+                return;
+            }
+            const updates = [];
+            teams.forEach(team => {
+                TARGETED_PAY_YEARS.forEach(year => {
+                    const value = targetedPayValues?.[team.team_id]?.[year];
+                    updates.push({
+                        team_id: team.team_id,
+                        fiscal_year: year,
+                        targeted_pay: Number.isFinite(value) ? value : 40000
+                    });
+                });
+            });
+
+            targetedPaySaving = true;
+            updateTargetedPaySaveState('Saving...');
+
+            try {
+                const response = await fetch('/api/incentives/targeted-pay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        updates,
+                        updatedBy: 'incentive-admin'
+                    })
+                });
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.error || 'Failed to save targeted pay');
+                }
+                showSuccess('Targeted pay saved successfully!');
+                try {
+                    const versionId = window.__currentVersionId || 0;
+                    const bc = new BroadcastChannel('incentiveConfig');
+                    bc.postMessage({ type: 'targetedPay', teamId: 0, versionId, ts: Date.now() });
+                } catch (bcError) {
+                    const versionId = window.__currentVersionId || 0;
+                    localStorage.setItem('incentive_config_updated', JSON.stringify({ type: 'targetedPay', teamId: 0, versionId, ts: Date.now() }));
+                }
+                targetedPayDirty = false;
+                updateTargetedPaySaveState('All changes saved.');
+            } catch (error) {
+                showError('Error saving targeted pay: ' + error.message);
+            } finally {
+                targetedPaySaving = false;
+                if (targetedPayDirty) {
+                    scheduleTargetedPayAutoSave();
+                } else {
+                    updateTargetedPaySaveState('All changes saved.');
+                }
+            }
+        }
+
+        function renderPercentTargetTable() {
+            const tbody = document.getElementById('percentTargetBody');
+            if (!tbody) return;
+            if (!teams.length) {
+                tbody.innerHTML = '<tr><td colspan="4">No teams available.</td></tr>';
+                return;
+            }
+            const rows = teams.map(team => {
+                const values = percentTargetValues[team.team_id] || { qs: 1.08, bg: 1.08, ar: 1.08 };
+                const formatValue = (val) => Number.isFinite(val) ? (val * 100).toFixed(1) : '';
+                return `
+                    <tr>
+                        <td>${team.team_name}</td>
+                        <td><input type="number" min="0" step="0.1" class="targeted-pay-input percent-target-input" data-team-id="${team.team_id}" data-metric="qs" value="${formatValue(values.qs)}" /></td>
+                        <td><input type="number" min="0" step="0.1" class="targeted-pay-input percent-target-input" data-team-id="${team.team_id}" data-metric="bg" value="${formatValue(values.bg)}" /></td>
+                        <td><input type="number" min="0" step="0.1" class="targeted-pay-input percent-target-input" data-team-id="${team.team_id}" data-metric="ar" value="${formatValue(values.ar)}" /></td>
+                    </tr>
+                `;
+            }).join('');
+            tbody.innerHTML = rows;
+            tbody.querySelectorAll('.percent-target-input').forEach(input => {
+                input.addEventListener('input', handlePercentTargetInput);
+            });
+            updatePercentTargetStatus(percentTargetsDirty ? 'Unsaved changes' : 'All changes saved.');
+        }
+
+        function handlePercentTargetInput(event) {
+            const input = event.target;
+            const teamId = Number(input.dataset.teamId);
+            const metric = input.dataset.metric;
+            if (!Number.isFinite(teamId) || !metric) return;
+            const raw = input.value.trim();
+            const numeric = raw === '' ? null : Number(raw);
+            if (!percentTargetValues[teamId]) {
+                percentTargetValues[teamId] = { qs: 1.08, bg: 1.08, ar: 1.08 };
+            }
+            percentTargetValues[teamId][metric] = Number.isFinite(numeric) ? numeric / 100 : null;
+            percentTargetsDirty = true;
+            percentTargetsTouched = true;
+            updatePercentTargetStatus('Unsaved changes');
+            schedulePercentTargetAutoSave();
+        }
+
+        function updatePercentTargetStatus(message = '') {
+            const statusEl = document.getElementById('percentTargetStatus');
+            if (statusEl) {
+                const text = message || (percentTargetsDirty ? 'Unsaved changes' : 'All changes saved.');
+                if (percentTargetsTouched && text) {
+                    statusEl.style.visibility = 'visible';
+                    statusEl.textContent = text;
+                } else {
+                    statusEl.style.visibility = 'hidden';
+                    statusEl.textContent = '';
+                }
+            }
+        }
+
+        function schedulePercentTargetAutoSave() {
+            if (percentTargetSaveTimer) {
+                clearTimeout(percentTargetSaveTimer);
+            }
+            percentTargetSaveTimer = setTimeout(() => savePercentTargets(), PERCENT_TARGET_AUTO_SAVE_DELAY);
+        }
+
+        async function loadPercentTargets() {
+            try {
+                const versionId = window.__currentVersionId || 0;
+                const params = new URLSearchParams();
+                if (versionId) params.set('versionId', versionId);
+                const response = await fetch(`/api/incentives/percent-targets?${params.toString()}`);
+                if (!response.ok) {
+                    throw new Error('Request failed');
+                }
+                const json = await response.json();
+                const map = {};
+                teams.forEach(team => {
+                    map[team.team_id] = { qs: 1.08, bg: 1.08, ar: 1.08 };
+                });
+                if (json && Array.isArray(json.data)) {
+                    json.data.forEach(row => {
+                        const teamId = Number(row.team_id);
+                        if (!map[teamId]) {
+                            map[teamId] = {};
+                        }
+                        const qs = Number(row.qs_percent);
+                        const bg = Number(row.bg_percent);
+                        const ar = Number(row.ar_percent);
+                        if (Number.isFinite(qs)) map[teamId].qs = qs;
+                        if (Number.isFinite(bg)) map[teamId].bg = bg;
+                        if (Number.isFinite(ar)) map[teamId].ar = ar;
+                    });
+                }
+                percentTargetValues = map;
+                percentTargetsDirty = false;
+                percentTargetsLoaded = true;
+                renderPercentTargetTable();
+            } catch (error) {
+                console.error('Failed to load percent targets:', error);
+                showError('Failed to load % to Target settings: ' + error.message);
+            }
+        }
+
+        async function savePercentTargets() {
+            if (percentTargetsSaving) {
+                schedulePercentTargetAutoSave();
+                return;
+            }
+            if (!percentTargetsDirty) {
+                updatePercentTargetStatus('All changes saved.');
+                return;
+            }
+            const versionId = window.__currentVersionId || 0;
+            const updates = teams.map(team => {
+                const values = percentTargetValues[team.team_id] || {};
+                const sanitize = (val) => (Number.isFinite(val) && val > 0 ? val : 1.08);
+                return {
+                    team_id: team.team_id,
+                    version_id: versionId,
+                    qs_percent: sanitize(values.qs),
+                    bg_percent: sanitize(values.bg),
+                    ar_percent: sanitize(values.ar)
+                };
+            });
+
+            percentTargetsSaving = true;
+            updatePercentTargetStatus('Saving...');
+
+            try {
+                const response = await fetch('/api/incentives/percent-targets', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        updates,
+                        updatedBy: (window.AppState?.currentUser) || 'incentive-admin'
+                    })
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.error || 'Failed to save % to Target');
+                }
+                percentTargetsDirty = false;
+                updatePercentTargetStatus('All changes saved.');
+                showSuccess('% to Target settings saved successfully!');
+                try {
+                    const bc = new BroadcastChannel('incentiveConfig');
+                    bc.postMessage({ type: 'percentTargets', teamId: 0, versionId, ts: Date.now() });
+                } catch (e) {
+                    localStorage.setItem('incentive_config_updated', JSON.stringify({ type: 'percentTargets', teamId: 0, versionId, ts: Date.now() }));
+                }
+            } catch (error) {
+                console.error('Failed to save percent targets:', error);
+                showError('Failed to save % to Target settings: ' + error.message);
+            } finally {
+                percentTargetsSaving = false;
+                if (percentTargetsDirty) {
+                    schedulePercentTargetAutoSave();
+                } else {
+                    updatePercentTargetStatus('All changes saved.');
+                }
             }
         }
         
         async function loadCompensableMetrics() {
             try {
-                const versionId = document.getElementById('versionSelect').value;
+                const versionId = window.__currentVersionId;
                 const response = await fetch(`/api/incentives/compensable-metrics?versionId=${versionId}`);
                 const result = await response.json();
                 
@@ -456,7 +1786,7 @@
         async function loadTeamRatios() {
             try {
                 const teamId = document.getElementById('teamSelect').value;
-                const versionId = document.getElementById('versionSelect').value;
+                const versionId = window.__currentVersionId;
                 
                 // FIX #5: Simplified API call without period
                 const response = await fetch(`/api/incentives/quality-ratios/${teamId}?versionId=${versionId}`);
@@ -465,37 +1795,53 @@
                 if (result.success || result) { // Handle both response formats
                     currentQualityRatios = result.data || result;
                     
-                    const ratioTypes = [
-                        { type: 'investment_accounts', desc: 'Investment Accounts Quality' },
-                        { type: 'investment_assets', desc: 'Investment Assets Quality' },
-                        { type: 'banking_accounts', desc: 'Banking Accounts Quality' },
-                        { type: 'banking_assets', desc: 'Banking Assets Quality' },
-                        { type: 'wealth_accounts', desc: 'Wealth Management Accounts Quality' },
-                        { type: 'wealth_assets', desc: 'Wealth Management Assets Quality' },
-                        { type: 'productive_headcount', desc: 'Productive Headcount Adjustment' },
-                        { type: 'ar_enroll', desc: 'AR Enrollment Rate' },
-                        { type: 'ar_book', desc: 'AR Book Rate' },
-                        { type: 'ar_ramp', desc: 'AR Ramp Rate' }
-                    ];
+                    const autoRatios = await getAutoRatios(teamId, versionId);
+                    window.__lastAutoRatios = autoRatios;
+
+                    const ratioTypes = QUALITY_RATIO_TYPES;
                     
                     const tbody = document.getElementById('ratiosTableBody');
                     tbody.innerHTML = '';
                     
                     ratioTypes.forEach(ratio => {
                         const row = document.createElement('tr');
-                        // FIX #5: Handle new structure
                         const ratioKey = ratio.type + '_ratio';
                         const rawVal = (currentQualityRatios[ratioKey] ?? currentQualityRatios[ratio.type]);
-                        const currentValue = (rawVal === undefined || rawVal === null) ? 1.0 : rawVal;
+                        const currentValue = (rawVal === undefined || rawVal === null) ? null : rawVal;
+                        const autoValue = ratio.autoKey ? autoRatios[ratio.autoKey] : null;
+                            const autoDisplay = autoValue != null ? formatPercent(autoValue, ratio.precision ?? 1) : '';
+                            const overrideDisplay = currentValue != null ? formatPercent(currentValue, ratio.precision ?? 1) : '';
+                            const placeholder = ratio.mode === 'delta' ? '+/-' : 'Override';
+                            const stepAttr = ratio.step != null ? `step="${ratio.step}"` : '';
+                            const minAttr = ratio.min != null ? `min="${ratio.min}"` : '';
+                            const maxAttr = ratio.max != null ? `max="${ratio.max}"` : '';
+                            const valueAttr = overrideDisplay !== '' ? `value="${overrideDisplay}"` : '';
+                            const autoValueAttr = autoValue != null ? autoValue : '';
+        const overrideLabel = ratio.mode === 'delta' ? 'Override (+/- pts)' : 'Override (%)';
+                        const valueCell = `
+                            <div class="value-duo">
+                                <div class="value-auto">
+                                    <label>Auto</label>
+                                    <input type="number" value="${autoDisplay}" placeholder="--" readonly>
+                                </div>
+                                <div class="value-override">
+                                    <label>${overrideLabel}</label>
+                                    <input type="number"
+                                           id="ratio_${ratio.type}"
+                                           ${minAttr}
+                                           ${maxAttr}
+                                           ${stepAttr}
+                                           placeholder="${placeholder}"
+                                           data-mode="${ratio.mode}"
+                                           data-auto-value="${autoValueAttr}"
+                                           ${valueAttr}>
+                                </div>
+                            </div>
+                        `;
                         row.innerHTML = `
                             <td>${ratio.desc}</td>
                             <td>
-                                <input type="number" 
-                                       id="ratio_${ratio.type}" 
-                                       min="0" 
-                                       max="200" 
-                                       step="1" 
-                                       value="${Math.round((currentValue || 0) * 100)}">
+                                ${valueCell}
                             </td>
                             <td style="text-align: left; font-size: 12px; color: #666;">
                                 ${getRatioDescription(ratio.type)}
@@ -516,30 +1862,8 @@
         }
 
         function enforceReadOnly() {
-            const versionSelect = document.getElementById('versionSelect');
             const banner = document.getElementById('readOnlyBanner');
-            const readOnly = window.__currentVersionId ? (String(versionSelect.value) !== String(window.__currentVersionId)) : false;
-
-            // Disable all inputs and save buttons when read-only
-            document.querySelectorAll('#metricsGrid input[type="checkbox"], #ratiosTableBody input[type="number"]').forEach(inp => {
-                inp.disabled = readOnly;
-            });
-            const saveButtons = document.querySelectorAll('.save-btn:not(#switchCurrentBtn)');
-            saveButtons.forEach(btn => btn.disabled = readOnly);
-            banner.style.display = readOnly ? 'flex' : 'none';
-
-            // Wire switch to current button
-            const switchBtn = document.getElementById('switchCurrentBtn');
-            if (switchBtn) {
-                switchBtn.onclick = () => {
-                    if (window.__currentVersionId) {
-                        versionSelect.value = window.__currentVersionId;
-                        loadTeamRatios();
-                        enforceReadOnly();
-                    }
-                };
-                switchBtn.style.display = readOnly ? 'inline-block' : 'none';
-            }
+            banner.style.display = 'none';
         }
         
         function getRatioDescription(type) {
@@ -548,12 +1872,9 @@
                 'investment_assets': 'Percentage of investment assets that count toward compensation',
                 'banking_accounts': 'Percentage of banking accounts that count toward compensation',
                 'banking_assets': 'Percentage of banking assets that count toward compensation',
-                'wealth_accounts': 'Additional percentage for wealth management overlay',
-                'wealth_assets': 'Additional percentage for wealth management overlay',
-                'productive_headcount': 'Adjustment factor for productive headcount',
-                'ar_enroll': 'Percentage of Product C balance for AR enrollment',
-                'ar_book': 'Multiplier applied to AR enrollment',
-                'ar_ramp': 'Multiplier applied to AR book'
+                'wealth_accounts': 'Trailing 12-month WM Accounts/ (Investment + Banking accounts) ratio',
+                'wealth_assets': 'Trailing 12-month WM Assets / (Investment + Banking assets) ratio',
+                'ar_ramp': 'Multiplier applied to AR Enroll'
             };
             return descriptions[type] || '';
         }
@@ -566,7 +1887,7 @@
                     team_id: parseInt(checkbox.dataset.teamId),
                     metric: checkbox.dataset.metric,
                     is_compensable: checkbox.checked,
-                    version_id: parseInt(document.getElementById('versionSelect').value)
+                    version_id: parseInt(window.__currentVersionId || 0)
                 });
             });
             
@@ -584,12 +1905,12 @@
                     showSuccess('Compensable metrics saved successfully!');
                     // Broadcast change for live refresh in main app
                     try {
-                        const versionId = document.getElementById('versionSelect').value;
+                        const versionId = window.__currentVersionId || 0;
                         const teamId = document.getElementById('teamSelect').value;
                         const bc = new BroadcastChannel('incentiveConfig');
                         bc.postMessage({ type: 'compensable', teamId: parseInt(teamId), versionId: parseInt(versionId), ts: Date.now() });
                     } catch (e) {
-                        const versionId = document.getElementById('versionSelect').value;
+                        const versionId = window.__currentVersionId || 0;
                         const teamId = document.getElementById('teamSelect').value;
                         localStorage.setItem('incentive_config_updated', JSON.stringify({ type: 'compensable', teamId: parseInt(teamId), versionId: parseInt(versionId), ts: Date.now() }));
                     }
@@ -611,24 +1932,27 @@
             ratiosSaveTimer = setTimeout(() => doSaveQualityRatios(), 800);
         }
 
+        function readRatioInputValue(id) {
+            const input = document.getElementById(id);
+            if (!input) return null;
+            const raw = (input.value ?? '').toString().trim();
+            if (raw === '') return null;
+            const parsed = parseFloat(raw);
+            return Number.isFinite(parsed) ? parsed / 100 : null;
+        }
+
         async function doSaveQualityRatios() {
             if (ratiosSaveInFlight) { ratiosSavePending = true; return; }
             const teamId = document.getElementById('teamSelect').value;
-            const versionId = document.getElementById('versionSelect').value;
+            const versionId = window.__currentVersionId || 0;
             const ratios = {
                 team_id: parseInt(teamId),
-                version_id: parseInt(versionId),
-                investment_accounts_ratio: parseFloat(document.getElementById('ratio_investment_accounts').value) / 100,
-                investment_assets_ratio: parseFloat(document.getElementById('ratio_investment_assets').value) / 100,
-                banking_accounts_ratio: parseFloat(document.getElementById('ratio_banking_accounts').value) / 100,
-                banking_assets_ratio: parseFloat(document.getElementById('ratio_banking_assets').value) / 100,
-                wealth_accounts_ratio: parseFloat(document.getElementById('ratio_wealth_accounts').value) / 100,
-                wealth_assets_ratio: parseFloat(document.getElementById('ratio_wealth_assets').value) / 100,
-                productive_headcount_ratio: parseFloat(document.getElementById('ratio_productive_headcount').value) / 100,
-                ar_enroll_ratio: parseFloat(document.getElementById('ratio_ar_enroll').value) / 100,
-                ar_book_ratio: parseFloat(document.getElementById('ratio_ar_book').value) / 100,
-                ar_ramp_ratio: parseFloat(document.getElementById('ratio_ar_ramp').value) / 100
+                version_id: parseInt(versionId)
             };
+            QUALITY_RATIO_TYPES.forEach(ratio => {
+                const key = `${ratio.type}_ratio`;
+                ratios[key] = readRatioInputValue(`ratio_${ratio.type}`);
+            });
 
             ratiosSaveInFlight = true;
             let attempt = 0;

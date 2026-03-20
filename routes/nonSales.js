@@ -4,6 +4,7 @@ const router = express.Router();
 const logger = require('../utils/logger');
 const path = require('path');
 const fs = require('fs');
+const { rejectIfVersionLocked } = require('../utils/forecast-guards');
 
 const DATA_PATH = path.join(__dirname, '..', 'data', 'non_sales_headcount.json');
 
@@ -310,6 +311,10 @@ router.put('/data', async (req, res) => {
   const numericValue = parseInt(value, 10) || 0;
   const conn = await pool.getConnection();
   try {
+    if (await rejectIfVersionLocked({ poolOrConnection: conn, res, versionId })) {
+      return;
+    }
+
     await ensureNonSalesTable(pool);
     const [existing] = await conn.execute(
       `SELECT id FROM forecast_non_sales_headcount WHERE team_id = ? AND period_date = ? AND version_id = ?`,

@@ -173,7 +173,7 @@ function renderHeadcountFlowsTable(data, months, opts = {}) {
             if (editable) {
                 html += `<td class="${baseClass}"><input type="number" class="selectable-input" data-month="${month}" data-flow-key="${row.key}" data-team="${teamId}" value="${value}" onchange="handleHeadcountFlowChange(this)"></td>`;
             } else {
-                html += `<td class="${baseClass}">${value}</td>`;
+                html += `<td class="${baseClass}" data-flow-team="${teamId}" data-flow-key="${row.key}" data-month="${month}">${value}</td>`;
             }
         });
         QUARTERS.forEach(quarter => {
@@ -337,6 +337,8 @@ function renderHeadcountTab(data, opts = {}) {
     html += '</tr></tbody></table></div>';
     container.innerHTML = html;
 
+    initializeTableScrollbars(container);
+
     // Setup input selection for bulk operations
     setupInputSelection();
 }
@@ -460,6 +462,7 @@ function renderNonSalesHeadcountTab(groupData, opts = {}) {
 
     html += '</tr></tbody></table></div>';
     container.innerHTML = html;
+    initializeTableScrollbars(container);
     setupInputSelection();
 }
 // Render production tab
@@ -474,6 +477,9 @@ function renderProductionBaselineColumn(data, months) {
 
     if (baselineState.productivity == null) {
         baselineState.productivity = Number(toNumber(averages.productivity, 0).toFixed(2));
+    }
+    if (baselineState.deepeningPercent == null) {
+        baselineState.deepeningPercent = toNumber(averages.deepeningPercent, 0);
     }
 
     PRODUCTS.forEach(product => {
@@ -552,7 +558,21 @@ function renderProductionBaselineColumn(data, months) {
                         </div>
                     </div>`;
                 }).join('')}
+                <div class="baseline-row--divider baseline-divider--deepening"></div>
+                <div class="baseline-row--spacer baseline-spacer--product-balances"></div>
+                <div class="baseline-column-labels baseline-column-labels--section">
+                    <span class="baseline-column-label baseline-column-label--avg baseline-section-avg-label">AVG ${period} MO</span>
+                    <span class="baseline-column-label baseline-column-label--baseline">Baseline</span>
+                </div>
+                <div class="baseline-row--metric" data-baseline-metric="deepening-percent">
+                    <div class="baseline-cell--avg">${(toNumber(averages.deepeningPercent, 0) * 100).toFixed(1)}%</div>
+                    <div class="baseline-cell--input">
+                        <input type="number" step="0.1" min="0" max="100" class="baseline-input" data-baseline-metric="deepening-percent" value="${((baselineState.deepeningPercent ?? 0) * 100).toFixed(1)}" ${allowEditing ? '' : 'disabled'}>
+                        <span class="baseline-suffix">%</span>
+                    </div>
+                </div>
                 <div class="baseline-row--spacer baseline-spacer--tail"></div>
+                
             </div>
         </div>
     `;
@@ -567,15 +587,30 @@ function renderProductionTab(data, opts = {}) {
     const months = generateMonthList();
     const slugifyProductName = (value) => (typeof slugify === 'function' ? slugify(value) : String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-'));
     const totalDashCells = QUARTERS.length + YEARS.length;
+    const isCurrentForecastVersion = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+    if (!data.deepening) {
+        data.deepening = { amount: {}, percent: {} };
+    } else {
+        data.deepening.amount = data.deepening.amount || {};
+        data.deepening.percent = data.deepening.percent || {};
+    }
 
-    let html = '<div class="production-layout">';
+    let layoutClass = 'production-layout';
 
     let baselineColumn = '';
     if (mode === 'investments' && !AppState.isGroupView) {
         baselineColumn = renderProductionBaselineColumn(data, months);
-        if (baselineColumn) {
-            html += baselineColumn;
+        if (!baselineColumn) {
+            layoutClass += ' production-layout--single-column';
         }
+    } else {
+        layoutClass += ' production-layout--single-column';
+    }
+
+    let html = `<div class="${layoutClass}">`;
+
+    if (baselineColumn) {
+        html += baselineColumn;
     }
 
     if (typeof updateProductionToolbarCaption === 'function') {
@@ -694,23 +729,67 @@ function renderProductionTab(data, opts = {}) {
     });
     html += '</tr>';
     }
+
+    // Total Accounts Sold - banking only
+    if (mode === 'banking' || mode === 'all') {
+    html += '<tr class="subtotal-row" data-baseline-anchor="banking-total-accounts"><td>Total Accounts</td>';
+    const bankingAccountsData = {};
+    months.forEach((month, idx) => {
+        const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
+        const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
+        let monthTotal = 0;
+        ADDITIONAL_PRODUCTS.forEach(product => {
+            const weeklyProductivity = parseFloat(data.additionalProducts?.[product]?.productivity?.[month] || 0);
+            const productAccounts = Math.round((headcount * weeklyProductivity * businessDays) / 5);
+            monthTotal += productAccounts;
+        });
+        bankingAccountsData[month] = monthTotal;
+        html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" id="banking-total-accounts-${month}">${formatNumber(monthTotal)}</td>`;
+    });
+
+    QUARTERS.forEach(quarter => {
+        const sum = calculateQuarterSum(bankingAccountsData, quarter);
+        const quarterSlug = slugifyProductName(quarter);
+        html += `<td class="quarter-col" id="banking-total-accounts-quarter-${quarterSlug}">${formatNumber(sum)}</td>`;
+    });
+    
+    YEARS.forEach(year => {
+        const sum = calculateYearSum(bankingAccountsData, months, year);
+        html += `<td class="year-total-col" id="banking-total-accounts-year-${year}">${formatNumber(sum)}</td>`;
+    });
+    html += '</tr>';
+    }
     
     // Total Balances in millions
     html += '<tr class="total-row" data-baseline-anchor="total-balances"><td>Total Balances ($M)</td>';
+    const includeInvestments = mode === 'investments' || mode === 'all';
+    const includeBanking = mode === 'banking' || mode === 'all';
     const grandTotalData = {};
     months.forEach((month, idx) => {
         let grandTotal = 0;
-        PRODUCTS.forEach(product => {
-            const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
-            const weeklyProductivity = parseFloat(data.productivity[month]);
-            const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
-            // Updated formula with weekly productivity
+        const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
+        const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
+
+        if (includeInvestments) {
+            const weeklyProductivity = parseFloat(data.productivity[month]) || 0;
             const totalAccounts = (headcount * weeklyProductivity * businessDays) / 5;
-            const productMix = data.productMix[product][month];
-            const productAccounts = Math.round(totalAccounts * productMix);
-            const abpa = data.abpa[product][month];
-            grandTotal += productAccounts * abpa;
-        });
+            PRODUCTS.forEach(product => {
+                const productMix = data.productMix[product][month] || 0;
+                const productAccounts = Math.round(totalAccounts * productMix);
+                const abpa = data.abpa[product][month] || 0;
+                grandTotal += productAccounts * abpa;
+            });
+        }
+
+        if (includeBanking) {
+            ADDITIONAL_PRODUCTS.forEach(product => {
+                const weeklyProductivity = parseFloat(data.additionalProducts?.[product]?.productivity?.[month] || 0);
+                const abpa = parseFloat(data.additionalProducts?.[product]?.abpa?.[month] || 0);
+                const accounts = Math.round((headcount * weeklyProductivity * businessDays) / 5);
+                grandTotal += accounts * abpa;
+            });
+        }
+
         grandTotalData[month] = grandTotal;
         const grandTotalInMillions = (grandTotal / 1000000).toFixed(1);
         html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" id="grand-total-${month}">$${grandTotalInMillions}M</td>`;
@@ -720,14 +799,15 @@ function renderProductionTab(data, opts = {}) {
     QUARTERS.forEach(quarter => {
         const sum = calculateQuarterSum(grandTotalData, quarter);
         const sumInMillions = (sum / 1000000).toFixed(1);
-        html += `<td class="quarter-col">$${sumInMillions}M</td>`;
+        const quarterSlug = slugifyProductName(quarter);
+        html += `<td class="quarter-col" id="grand-total-quarter-${quarterSlug}">$${sumInMillions}M</td>`;
     });
     
     // Year totals for balances - using YEARS array
     YEARS.forEach(year => {
         const sum = calculateYearSum(grandTotalData, months, year);
         const sumInMillions = (sum / 1000000).toFixed(1);
-        html += `<td class="year-total-col">$${sumInMillions}M</td>`;
+        html += `<td class="year-total-col" id="grand-total-year-${year}">$${sumInMillions}M</td>`;
     });
     html += '</tr>';
     
@@ -945,6 +1025,69 @@ function renderProductionTab(data, opts = {}) {
         html += '</tr>';
     });
     
+    const deepeningAmountData = {};
+    html += '<tr><td colspan="52" class="section-header">Deepening</td></tr>';
+    html += '<tr class="total-row"><td>Deepening ($M)</td>';
+    months.forEach(month => {
+        const isForecast = data.forecastStatus[month] === 'Forecast';
+        const amount = Number(data.deepening?.amount?.[month]) || 0;
+        deepeningAmountData[month] = amount;
+        html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'} calculated-value" id="deepening-amount-${month}">$${(amount / 1000000).toFixed(1)}M</td>`;
+    });
+    QUARTERS.forEach(quarter => {
+        const sum = calculateQuarterSum(deepeningAmountData, quarter);
+        const sumInMillions = (sum / 1000000).toFixed(1);
+        const quarterSlug = slugifyProductName(quarter);
+        html += `<td class="quarter-col" id="deepening-amount-quarter-${quarterSlug}">$${sumInMillions}M</td>`;
+    });
+    YEARS.forEach(year => {
+        const sum = calculateYearSum(deepeningAmountData, months, year);
+        const sumInMillions = (sum / 1000000).toFixed(1);
+        html += `<td class="year-total-col" id="deepening-amount-year-${year}">$${sumInMillions}M</td>`;
+    });
+    html += '</tr>';
+
+    const deepeningPercentData = {};
+    html += '<tr><td>Deepening %</td>';
+    months.forEach(month => {
+        const isForecast = data.forecastStatus[month] === 'Forecast';
+        const percent = Number(data.deepening?.percent?.[month]) || 0;
+        deepeningPercentData[month] = percent;
+        if (isForecast && !AppState.isGroupView && isCurrentForecastVersion) {
+            html += `<td class="forecast-col" id="deepening-percent-${month}">
+                <div class="table-input-with-suffix">
+                    <input type="number"
+                           step="0.1"
+                           min="0"
+                           max="100"
+                           value="${(percent * 100).toFixed(1)}"
+                           data-month="${month}"
+                           data-metric="deepening-percent"
+                           data-team="${AppState.currentTeam}"
+                           class="selectable-input"
+                           onchange="handleProductionChange(this)">
+                    <span class="table-input-suffix">%</span>
+                </div>
+            </td>`;
+        } else {
+            html += `<td class="${isForecast ? 'forecast-col' : 'actual-col'}" id="deepening-percent-${month}">${(percent * 100).toFixed(1)}%</td>`;
+        }
+    });
+    QUARTERS.forEach(quarter => {
+        const deepSum = calculateQuarterSum(deepeningAmountData, quarter);
+        const balanceSum = calculateQuarterSum(grandTotalData, quarter);
+        const pct = balanceSum > 0 ? deepSum / balanceSum : 0;
+        const quarterSlug = slugifyProductName(quarter);
+        html += `<td class="quarter-col" id="deepening-percent-quarter-${quarterSlug}">${(pct * 100).toFixed(1)}%</td>`;
+    });
+    YEARS.forEach(year => {
+        const deepSum = calculateYearSum(deepeningAmountData, months, year);
+        const balanceSum = calculateYearSum(grandTotalData, months, year);
+        const pct = balanceSum > 0 ? deepSum / balanceSum : 0;
+        html += `<td class="year-total-col" id="deepening-percent-year-${year}">${(pct * 100).toFixed(1)}%</td>`;
+    });
+    html += '</tr>';
+    
     }
     // ========== ADDITIONAL PRODUCTS SECTION (Banking) ==========
     if (mode === 'banking' || mode === 'all') {
@@ -1102,6 +1245,12 @@ function renderProductionTab(data, opts = {}) {
     html += '</div>';
     container.innerHTML = html;
 
+    initializeTableScrollbars(container);
+
+    if ((mode === 'banking' || mode === 'all') && typeof recalculateBankingTotals === 'function' && !AppState.isGroupView) {
+        recalculateBankingTotals(AppState.currentTeam);
+    }
+
     if (mode === 'investments' && !AppState.isGroupView) {
         const column = container.querySelector('.production-baseline-column');
         if (column) {
@@ -1122,6 +1271,94 @@ function renderProductionTab(data, opts = {}) {
 }
 
 // Setup input selection functionality for bulk operations
+function initializeTableScrollbars(root) {
+    const context = root instanceof HTMLElement ? root : document;
+    const wrappers = context.querySelectorAll('.data-table-wrapper');
+
+    wrappers.forEach(wrapper => {
+        const isHeadcountWrapper = !!wrapper.closest('#headcount-tab');
+        if (isHeadcountWrapper) {
+            if (wrapper.previousElementSibling && wrapper.previousElementSibling.classList.contains('data-table-top-scroll')) {
+                wrapper.previousElementSibling.remove();
+            }
+            wrapper.dataset.topScrollInitialized = 'skipped';
+            return;
+        }
+
+        if (wrapper.dataset.topScrollInitialized === 'true') {
+            const refresh = wrapper.__topScrollRefresh;
+            if (typeof refresh === 'function') {
+                refresh();
+            }
+            return;
+        }
+
+        const parent = wrapper.parentElement;
+        if (!parent) {
+            return;
+        }
+
+        if (wrapper.previousElementSibling && wrapper.previousElementSibling.classList.contains('data-table-top-scroll')) {
+            wrapper.previousElementSibling.remove();
+        }
+
+        const topScroll = document.createElement('div');
+        topScroll.className = 'data-table-top-scroll';
+
+        const inner = document.createElement('div');
+        inner.className = 'data-table-top-scroll-inner';
+        topScroll.appendChild(inner);
+
+        parent.insertBefore(topScroll, wrapper);
+
+        let isSyncingTop = false;
+        let isSyncingWrapper = false;
+
+        const syncWidths = () => {
+            inner.style.width = `${wrapper.scrollWidth}px`;
+        };
+
+        const handleWrapperScroll = () => {
+            if (isSyncingWrapper) {
+                return;
+            }
+            isSyncingTop = true;
+            topScroll.scrollLeft = wrapper.scrollLeft;
+            isSyncingTop = false;
+        };
+
+        const handleTopScroll = () => {
+            if (isSyncingTop) {
+                return;
+            }
+            isSyncingWrapper = true;
+            wrapper.scrollLeft = topScroll.scrollLeft;
+            isSyncingWrapper = false;
+        };
+
+        wrapper.addEventListener('scroll', handleWrapperScroll);
+        topScroll.addEventListener('scroll', handleTopScroll);
+
+        if (typeof ResizeObserver !== 'undefined') {
+            const observer = new ResizeObserver(syncWidths);
+            observer.observe(wrapper);
+            const table = wrapper.querySelector('table');
+            if (table) {
+                observer.observe(table);
+            }
+            wrapper.__topScrollObserver = observer;
+        } else {
+            window.addEventListener('resize', syncWidths);
+        }
+
+        syncWidths();
+
+        wrapper.dataset.topScrollInitialized = 'true';
+        wrapper.__topScrollElement = topScroll;
+        wrapper.__topScrollRefresh = syncWidths;
+    });
+}
+
 function setupInputSelection() {
     // Initialize selection state for this table
     window.currentSelection = {

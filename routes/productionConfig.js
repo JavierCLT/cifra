@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
+const { rejectIfVersionLocked } = require('../utils/forecast-guards');
 
 async function ensureProductionSettingsTable(pool) {
     const createSqlJson = `CREATE TABLE IF NOT EXISTS production_settings (
@@ -177,6 +178,9 @@ router.put('/', async (req, res) => {
     }
 
     await ensureProductionSettingsTable(forecastPool);
+    if (await rejectIfVersionLocked({ poolOrConnection: forecastPool, res, versionId: parsedVersionId })) {
+        return;
+    }
 
     const normalizedProductivitySeasonality = normalizeSeasonality(seasonalityProductivity);
     const normalizedAbpaSeasonality = normalizeSeasonality(seasonalityAbpa);

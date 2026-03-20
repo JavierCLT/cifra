@@ -28,6 +28,8 @@ const AppState = {
     redoStack: [],
     productionBaselineState: {},
     productionConfig: null,
+    referralBaselineState: {},
+    referralConfig: null,
     scrollPositions: {
         headcount: 0,
         headcount_sales: 0,
@@ -40,17 +42,21 @@ const AppState = {
         kmpc: 0,
         finance: 0
     },
-    currentUser: 'testuser@test.com' // Use email format
+    currentUser: 'testuser@test.com', // Use email format
+    isAdmin: false,
+    isSaveLockInProgress: false
 };
 
 // Constants
 const PG_LEVELS = ['PG1', 'PG2', 'PG3', 'PG4', 'PG5', 'PG6', 'PG7'];
 const PRODUCTS = ['Product A', 'Product B', 'Product C', 'Product D'];
-const ADDITIONAL_PRODUCTS = ['AA', 'BB', 'CC', 'DD', 'EE', 'FF', 'GG', 'HH'];
+const ADDITIONAL_PRODUCTS = ['AA', 'BB', 'CC', 'DD', 'EE'];
+const FLOW_VALUE_KEYS = ['flow_1', 'flow_2', 'flow_3', 'flow_4', 'flow_5'];
 const slugify = (value) => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-');
 const MONTH_ABBREVIATIONS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const SELF_DIRECTED_PRODUCT_NAME = PRODUCTS[0];
 const MGIA_PRODUCT_NAME = PRODUCTS[2];
+const SAVE_AND_LOCK_CONFIRMATION = 'SAVE AND LOCK FORECAST';
 let GROUPS = {}; // Will be populated from API
 window.GROUPS = GROUPS;
 
@@ -191,8 +197,42 @@ function closeProductionAdminModal() {
     modal.classList.remove('active');
 }
 
+function openReferralAdminPanel(versionId) {
+    const modal = document.getElementById('referralAdminModal');
+    const frame = document.getElementById('referralAdminFrame');
+    if (!modal || !frame) return;
+
+    const resolvedVersion = Number(versionId) || (AppState.currentVersion ? AppState.currentVersion.version_id : null);
+    const url = resolvedVersion ? `/referral-admin.html?versionId=${resolvedVersion}` : '/referral-admin.html';
+    if (frame.src !== url) {
+        frame.src = url;
+    }
+
+    if (!modal.dataset.outsideCloseBound) {
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                closeReferralAdminPanel();
+            }
+        });
+        modal.dataset.outsideCloseBound = 'true';
+    }
+
+    modal.style.display = 'block';
+    modal.classList.add('active');
+}
+
+function closeReferralAdminPanel() {
+    const modal = document.getElementById('referralAdminModal');
+    if (!modal) return;
+    modal.style.display = 'none';
+    modal.classList.remove('active');
+}
+
 window.openProductionAdminModal = openProductionAdminModal;
 window.closeProductionAdminModal = closeProductionAdminModal;
+window.openReferralAdminPanel = openReferralAdminPanel;
+window.closeReferralAdminPanel = closeReferralAdminPanel;
+window.handleReferralProductivityChange = handleReferralProductivityChange;
 
 window.switchTab = switchTab;
 
@@ -205,6 +245,7 @@ window.switchTeam = switchTeam;
 window.switchToGroup = switchToGroup;
 
 window.switchForecast = switchForecast;
+window.saveLockAndCloneForecastCycle = saveLockAndCloneForecastCycle;
 
 window.scrollToView = scrollToView;
 
@@ -225,16 +266,18 @@ async function initializeApp() {
         await API.checkHealth();
         
         // Load initial data including groups
-        const [teams, versions, periods, groupsData] = await Promise.all([
+        const [teams, versions, periods, groupsData, adminAccess] = await Promise.all([
             API.teams.getAll(),
             API.forecasts.getVersions(),
             API.actuals.getPeriods(),
-            API.teams.getGroups() 
+            API.teams.getGroups(),
+            API.forecasts.getAdminAccess(AppState.currentUser).catch(() => ({ isAdmin: false }))
         ]);
 
         AppState.teams = teams;
         AppState.forecastVersions = versions;
         AppState.calendarPeriods = periods;
+        AppState.isAdmin = !!adminAccess?.isAdmin;
 
         // Build GROUPS object dynamically
         GROUPS = {};
@@ -263,6 +306,7 @@ async function initializeApp() {
         // Initialize UI components
         initializeSidebar();
         initializeForecastSelector();
+        updateSaveLockButtonVisibility();
         
         // Initialize global selection event listeners
         initializeSelectionListeners();
@@ -273,6 +317,9 @@ async function initializeApp() {
         // Initialize cross-tab sync for Incentive Admin changes
         initializeIncentiveConfigSync();
         initializeProductionConfigSync();
+        if (typeof initializeReferralConfigSync === 'function') {
+            initializeReferralConfigSync();
+        }
         // Initialize paste handlers for Excel-style multi-cell paste
         initializePasteHandlers();
 
@@ -280,11 +327,13 @@ async function initializeApp() {
         
         // Load initial team data
         await loadTeamData(AppState.currentTeam);
+        applyLockedForecastUIState();
         
         // Scroll to Jan-24 after initial load
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
                 scrollToJan2024();
+                applyLockedForecastUIState();
             });
         });
 
@@ -304,8 +353,22 @@ function initializeIncentiveConfigSync() {
             const msg = ev.data || {};
             const teamId = parseInt(msg.teamId);
             const versionId = parseInt(msg.versionId);
-            if (!teamId || !versionId) return;
-            if (teamId === AppState.currentTeam && AppState.currentVersion && AppState.currentVersion.version_id === versionId) {
+            if (msg.type === 'targetedPay' && window.IncentiveCalculator && typeof window.IncentiveCalculator.clearTargetedPayCache === 'function') {
+                window.IncentiveCalculator.clearTargetedPayCache(msg.teamId ? Number(msg.teamId) : null);
+            }
+            if (msg.type === 'percentTargets' && window.IncentiveCalculator && typeof window.IncentiveCalculator.clearPercentTargetCache === 'function') {
+                if (msg.teamId) {
+                    window.IncentiveCalculator.clearPercentTargetCache(Number(msg.teamId), msg.versionId ? Number(msg.versionId) : null);
+                } else {
+                    window.IncentiveCalculator.clearPercentTargetCache();
+                }
+            }
+            if (msg.type === 'expenseGrid' && window.IncentiveCalculator && typeof window.IncentiveCalculator.clearExpenseGridCache === 'function') {
+                window.IncentiveCalculator.clearExpenseGridCache(msg.teamId ? Number(msg.teamId) : null, msg.versionId ? Number(msg.versionId) : null);
+            }
+            const matchesTeam = !teamId || teamId === AppState.currentTeam;
+            const matchesVersion = !versionId || (AppState.currentVersion && AppState.currentVersion.version_id === versionId);
+            if (matchesTeam && matchesVersion) {
                 if (AppState.currentTab === 'incentive') {
                     // Preserve current horizontal scroll before re-render
                     const wrapper = document.querySelector('#incentive-tab .data-table-wrapper');
@@ -325,8 +388,22 @@ function initializeIncentiveConfigSync() {
                 const msg = JSON.parse(e.newValue || '{}');
                 const teamId = parseInt(msg.teamId);
                 const versionId = parseInt(msg.versionId);
-                if (!teamId || !versionId) return;
-                if (teamId === AppState.currentTeam && AppState.currentVersion && AppState.currentVersion.version_id === versionId) {
+                if (msg.type === 'targetedPay' && window.IncentiveCalculator && typeof window.IncentiveCalculator.clearTargetedPayCache === 'function') {
+                    window.IncentiveCalculator.clearTargetedPayCache(msg.teamId ? Number(msg.teamId) : null);
+                }
+                if (msg.type === 'percentTargets' && window.IncentiveCalculator && typeof window.IncentiveCalculator.clearPercentTargetCache === 'function') {
+                    if (msg.teamId) {
+                        window.IncentiveCalculator.clearPercentTargetCache(Number(msg.teamId), msg.versionId ? Number(msg.versionId) : null);
+                    } else {
+                        window.IncentiveCalculator.clearPercentTargetCache();
+                    }
+                }
+                if (msg.type === 'expenseGrid' && window.IncentiveCalculator && typeof window.IncentiveCalculator.clearExpenseGridCache === 'function') {
+                    window.IncentiveCalculator.clearExpenseGridCache(msg.teamId ? Number(msg.teamId) : null, msg.versionId ? Number(msg.versionId) : null);
+                }
+                const matchesTeam = !teamId || teamId === AppState.currentTeam;
+                const matchesVersion = !versionId || (AppState.currentVersion && AppState.currentVersion.version_id === versionId);
+                if (matchesTeam && matchesVersion) {
                     if (AppState.currentTab === 'incentive') {
                         const wrapper = document.querySelector('#incentive-tab .data-table-wrapper');
                         if (wrapper) {
@@ -353,15 +430,19 @@ function initializePasteHandlers() {
         const text = clipboard.getData('text');
         if (!text) return;
 
-        // Only intercept when multiple cells likely (tabs/newlines present)
-        if (!/[\\t\\r\\n]/.test(text)) {
+        const matrix = parseClipboardMatrix(text);
+        const isMultiCellPaste = matrix && matrix.length > 0 && (
+            matrix.length > 1 || matrix.some(row => row.length > 1)
+        );
+
+        if (!isMultiCellPaste) {
             // Single value paste - let default behavior happen
             return;
         }
 
         e.preventDefault();
         try {
-            handleMatrixPaste(target, text);
+            handleMatrixPaste(target, text, matrix);
         } catch (err) {
             console.error('Paste failed:', err);
             showError('Paste failed. Please check the data format.');
@@ -376,8 +457,11 @@ function parseClipboardMatrix(rawText) {
         .replace(/\r\n?/g, '\n')
         .split('\n')
         .filter((line, idx, arr) => line.length > 0 || (idx < arr.length - 1 && arr[idx + 1].length > 0));
+
+    const delimiter = detectClipboardDelimiter(lines);
+
     const matrix = lines
-        .map(line => line.split('\t'))
+        .map(line => line.split(delimiter))
         // Remove trailing empty columns if line ends with tab(s)
         .map(cols => {
             let end = cols.length;
@@ -388,9 +472,20 @@ function parseClipboardMatrix(rawText) {
     return matrix;
 }
 
+function detectClipboardDelimiter(lines) {
+    if (lines.some(line => line.includes('\t'))) {
+        return '\t';
+    }
+    if (lines.some(line => line.includes(';'))) {
+        return ';';
+    }
+    return '\t';
+}
+
 function getMetricKeyFromInput(input) {
     if (input.dataset.metric) return input.dataset.metric;
     if (input.dataset.pg) return 'headcount';
+    if (input.dataset.flowKey) return 'headcount-flow';
     return null;
 }
 
@@ -409,6 +504,8 @@ function rowMatchesMetric(rowEl, metricKey) {
             return !!rowEl.querySelector("input[data-metric='additional-productivity']");
         case 'additional-abpa':
             return !!rowEl.querySelector("input[data-metric='additional-abpa']");
+        case 'headcount-flow':
+            return !!rowEl.querySelector('input[data-flow-key]');
         default:
             return false;
     }
@@ -428,6 +525,8 @@ function getInputsForRowByMetric(rowEl, metricKey) {
             return Array.from(rowEl.querySelectorAll("input[data-metric='additional-productivity']"));
         case 'additional-abpa':
             return Array.from(rowEl.querySelectorAll("input[data-metric='additional-abpa']"));
+        case 'headcount-flow':
+            return Array.from(rowEl.querySelectorAll('input[data-flow-key]'));
         default:
             return [];
     }
@@ -483,6 +582,12 @@ function parsePastedValue(metricKey, raw) {
         return { display: String(v), stored: v };
     }
 
+    if (metricKey === 'headcount-flow') {
+        const v = parseFloat(s);
+        if (isNaN(v)) return null;
+        return { display: String(v), stored: v };
+    }
+
     // Default fallback
     const v = parseFloat(s);
     if (isNaN(v)) return null;
@@ -507,12 +612,17 @@ function getDbFieldAndValue(input, metricKey, storedValue) {
         fieldName = `product_${input.dataset.product.toLowerCase()}_productivity`;
     } else if (metricKey === 'additional-abpa') {
         fieldName = `product_${input.dataset.product.toLowerCase()}_abpa`;
+    } else if (metricKey === 'headcount-flow') {
+        fieldName = input.dataset.flowKey;
+    } else if (metricKey === 'deepening-percent') {
+        fieldName = 'deepening_percent';
+        dbValue = storedValue / 100;
     }
     return { fieldName, dbValue };
 }
 
 // Build field and db value without an input element (for undo/redo)
-function getFieldAndDbValueFromState(metricKey, product, pg, value) {
+function getFieldAndDbValueFromState(metricKey, product, pg, value, flowKey) {
     let fieldName;
     let dbValue = value;
     if (metricKey === 'headcount') {
@@ -530,6 +640,11 @@ function getFieldAndDbValueFromState(metricKey, product, pg, value) {
         fieldName = `product_${product.toLowerCase()}_productivity`;
     } else if (metricKey === 'additional-abpa') {
         fieldName = `product_${product.toLowerCase()}_abpa`;
+    } else if (metricKey === 'headcount-flow') {
+        fieldName = flowKey;
+    } else if (metricKey === 'deepening-percent' || metricKey === 'deepening_percent') {
+        fieldName = 'deepening_percent';
+        dbValue = (parseFloat(value) || 0) / 100;
     }
     return { fieldName, dbValue };
 }
@@ -560,12 +675,302 @@ function getCurrentUiValueFromState(input, metricKey) {
         const product = input.dataset.product;
         return parseFloat(AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].abpa[month] || 0);
     }
+    if (metricKey === 'headcount-flow') {
+        const flowKey = input.dataset.flowKey;
+        const flows = AppState.teamData[AppState.currentForecast][teamKey].headcountFlows || {};
+        return parseFloat(flows[flowKey]?.[month] || 0);
+    }
     return 0;
 }
 
+function updateHeadcountFlowDerived(teamId, month) {
+    if (!AppState.currentForecast) return;
+    const teamKey = `Team ${teamId}`;
+    const store = AppState.teamData?.[AppState.currentForecast]?.[teamKey];
+    if (!store || !store.headcountFlows) return;
+    const flows = store.headcountFlows;
+    const starting = Number(flows.starting_headcount?.[month] ?? 0);
+    const flowSum = FLOW_VALUE_KEYS.reduce((sum, key) => {
+        const value = Number(flows[key]?.[month] ?? 0);
+        return sum + (Number.isFinite(value) ? value : 0);
+    }, 0);
+    const ending = starting + flowSum;
+    flows.ending_headcount[month] = ending;
+
+    const endingCell = document.querySelector(
+        `td[data-flow-team='${teamId}'][data-flow-key='ending_headcount'][data-month='${month}']`
+    );
+    if (endingCell) {
+        endingCell.textContent = ending;
+    }
+
+    Promise.resolve().then(() => syncProductiveHeadcountToEnding(teamId, month, ending));
+
+    return ending;
+}
+
+async function syncProductiveHeadcountToEnding(teamId, month, targetEnding) {
+    const versionKey = AppState.currentForecast;
+    const teamKey = `Team ${teamId}`;
+    const teamStore = AppState.teamData?.[versionKey]?.[teamKey];
+    if (!teamStore) {
+        return;
+    }
+
+    const adminState = loadHeadcountAdminState(teamId);
+    const ratio = resolveProductiveRatio({
+        state: adminState,
+        teamStore,
+        month,
+        targetEnding
+    });
+    const ratioMultiplier = ratio / 100;
+    const targetTotal = Math.max(0, Math.round((Number(targetEnding) || 0) * ratioMultiplier));
+    const currentValues = {};
+    let currentTotal = 0;
+
+    PG_LEVELS.forEach(pg => {
+        const raw = Number(teamStore.pgLevels?.[pg]?.[month] ?? 0);
+        const safe = Number.isFinite(raw) ? raw : 0;
+        currentValues[pg] = safe;
+        currentTotal += safe;
+    });
+
+    if (currentTotal === targetTotal) {
+        updateHeadcountTotals(teamId, month);
+        updateProductionCalculations(teamId, month);
+        return;
+    }
+
+    const allocations = computeHeadcountAllocations({
+        teamId,
+        month,
+        targetTotal,
+        currentValues,
+        adminState
+    });
+    const periodDate = typeof getPeriodDate === 'function' ? getPeriodDate(month) : month;
+    const updates = [];
+    let hasChange = false;
+
+    PG_LEVELS.forEach(pg => {
+        const newValue = allocations[pg] || 0;
+        const prevValue = currentValues[pg] || 0;
+        if (newValue === prevValue) {
+            return;
+        }
+        hasChange = true;
+        if (!teamStore.pgLevels[pg]) {
+            teamStore.pgLevels[pg] = {};
+        }
+        teamStore.pgLevels[pg][month] = newValue;
+
+        const selector = `#sales-headcount-subtab input[data-month="${month}"][data-pg="${pg}"][data-team="${teamId}"]`;
+        const inputEl = document.querySelector(selector);
+        if (inputEl) {
+            inputEl.value = newValue;
+        }
+
+        updates.push({
+            teamId: Number(teamId),
+            periodDate,
+            field: `pg${pg.replace(/\D/g, '')}_headcount`,
+            newValue
+        });
+    });
+
+    updateHeadcountTotals(teamId, month);
+    updateProductionCalculations(teamId, month);
+
+    if (!hasChange || !updates.length || !AppState.currentVersion) {
+        return;
+    }
+
+    const shouldPersist = !AppState.isBulkPasting && !AppState.isProgrammaticChange;
+    if (!shouldPersist) {
+        return;
+    }
+
+    try {
+        await API.forecasts.bulkUpdate({
+            updates,
+            versionId: AppState.currentVersion.version_id,
+            updatedBy: AppState.currentUser
+        });
+        showSaveIndicator();
+    } catch (error) {
+        console.error('Failed to sync productive headcount with ending headcount', error);
+        showError('Failed to sync productive headcount');
+    }
+}
+
+function loadHeadcountAdminState(teamId) {
+    const versionId = AppState.currentVersion?.version_id;
+    const versionKey = AppState.currentForecast;
+    const versionPart = Number.isFinite(versionId) ? `id:${versionId}` : `name:${versionKey || 'default'}`;
+    const storageKey = `hcAdmin.v1:${versionPart}:team:${teamId}`;
+    try {
+        const raw = window.localStorage?.getItem(storageKey);
+        if (!raw) {
+            return null;
+        }
+        return JSON.parse(raw);
+    } catch (error) {
+        console.warn('Unable to read headcount admin state', error);
+        return null;
+    }
+}
+
+function resolveProductiveRatio({ state, teamStore, month, targetEnding }) {
+    const ratioFromState = Number(state?.productiveRatio);
+    if (Number.isFinite(ratioFromState) && ratioFromState >= 0) {
+        return clampNumber(ratioFromState, 0, 100);
+    }
+
+    const ending = Number(teamStore?.headcountFlows?.ending_headcount?.[month] ?? targetEnding);
+    if (ending > 0) {
+        const productive = PG_LEVELS.reduce((sum, pg) => {
+            const value = Number(teamStore?.pgLevels?.[pg]?.[month] ?? 0);
+            return sum + (Number.isFinite(value) ? value : 0);
+        }, 0);
+        return clampNumber((productive / ending) * 100, 0, 100);
+    }
+
+    return 100;
+}
+
+function clampNumber(value, min, max) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return min;
+    }
+    return Math.min(max, Math.max(min, numeric));
+}
+
+function computeHeadcountAllocations({ teamId, month, targetTotal, currentValues, adminState }) {
+    const allocations = {};
+    PG_LEVELS.forEach(pg => {
+        allocations[pg] = 0;
+    });
+
+    if (targetTotal <= 0) {
+        return allocations;
+    }
+
+    const overrides = sanitizeMonthlyOverrides(adminState?.manualOverrides?.[month]);
+    Object.keys(overrides).forEach(pg => {
+        allocations[pg] = overrides[pg];
+    });
+
+    let manualTotal = Object.values(overrides).reduce((sum, value) => sum + value, 0);
+    let remaining = targetTotal - manualTotal;
+    if (remaining < 0) {
+        remaining = 0;
+    }
+
+    const adjustable = PG_LEVELS.filter(pg => !overrides.hasOwnProperty(pg));
+    if (adjustable.length > 0 && remaining > 0) {
+        const splits = resolvePgSplits({ adminState, currentValues, adjustable });
+        let shareTotal = adjustable.reduce((sum, pg) => sum + (splits[pg] || 0), 0);
+        if (shareTotal <= 0) {
+            shareTotal = adjustable.length;
+            adjustable.forEach(pg => {
+                splits[pg] = 1;
+            });
+        }
+
+        const provisional = [];
+        let allocated = 0;
+        adjustable.forEach(pg => {
+            const share = splits[pg] || 0;
+            const fraction = shareTotal > 0 ? share / shareTotal : (1 / adjustable.length);
+            const raw = remaining * fraction;
+            const base = Math.floor(raw);
+            allocations[pg] = (allocations[pg] || 0) + base;
+            allocated += base;
+            provisional.push({ pg, remainder: raw - base });
+        });
+
+        let remainderUnits = remaining - allocated;
+        if (remainderUnits > 0) {
+            provisional.sort((a, b) => b.remainder - a.remainder);
+            let index = 0;
+            while (remainderUnits > 0 && provisional.length > 0) {
+                const targetPg = provisional[index % provisional.length].pg;
+                allocations[targetPg] = (allocations[targetPg] || 0) + 1;
+                remainderUnits -= 1;
+                index += 1;
+            }
+        }
+    }
+
+    const finalTotal = PG_LEVELS.reduce((sum, pg) => sum + (allocations[pg] || 0), 0);
+    const difference = targetTotal - finalTotal;
+    if (difference !== 0) {
+        const eligible = adjustable.length ? adjustable : PG_LEVELS;
+        const targetPg = eligible[0];
+        if (targetPg) {
+            allocations[targetPg] = Math.max(0, (allocations[targetPg] || 0) + difference);
+        }
+    }
+
+    return allocations;
+}
+
+function sanitizeMonthlyOverrides(rawOverrides) {
+    const overrides = {};
+    if (!rawOverrides || typeof rawOverrides !== 'object') {
+        return overrides;
+    }
+
+    PG_LEVELS.forEach(pg => {
+        if (!Object.prototype.hasOwnProperty.call(rawOverrides, pg)) {
+            return;
+        }
+        const numeric = Math.max(0, Math.round(Number(rawOverrides[pg]) || 0));
+        overrides[pg] = numeric;
+    });
+
+    return overrides;
+}
+
+function resolvePgSplits({ adminState, currentValues, adjustable }) {
+    const splits = {};
+    let total = 0;
+
+    if (adminState && adminState.pgSplits && typeof adminState.pgSplits === 'object') {
+        adjustable.forEach(pg => {
+            const numeric = Number(adminState.pgSplits[pg]);
+            if (Number.isFinite(numeric) && numeric >= 0) {
+                splits[pg] = numeric;
+                total += numeric;
+            }
+        });
+    }
+
+    if (total > 0) {
+        return splits;
+    }
+
+    const positive = adjustable.filter(pg => (currentValues[pg] || 0) > 0);
+    const positiveTotal = positive.reduce((sum, pg) => sum + (currentValues[pg] || 0), 0);
+    if (positiveTotal > 0) {
+        positive.forEach(pg => {
+            splits[pg] = currentValues[pg] || 0;
+        });
+        return splits;
+    }
+
+    const evenShare = adjustable.length ? 100 / adjustable.length : 0;
+    adjustable.forEach(pg => {
+        splits[pg] = evenShare;
+    });
+    return splits;
+}
+
 // Apply matrix paste starting from a focused input
-function handleMatrixPaste(startInput, rawText) {
-    const matrix = parseClipboardMatrix(rawText);
+function handleMatrixPaste(startInput, rawText, preParsedMatrix) {
+    const matrix = preParsedMatrix || parseClipboardMatrix(rawText);
     if (!matrix || matrix.length === 0) return;
 
     const metricKey = getMetricKeyFromInput(startInput);
@@ -575,6 +980,8 @@ function handleMatrixPaste(startInput, rawText) {
     const startMonth = startInput.dataset.month;
 
     const updates = [];
+    const flowUpdates = [];
+    const flowTouches = new Set();
     const changes = [];
     AppState.isBulkPasting = true;
     try {
@@ -604,15 +1011,41 @@ function handleMatrixPaste(startInput, rawText) {
                 const previousValue = getCurrentUiValueFromState(targetInput, metricKey);
                 // Apply to UI
                 targetInput.value = parsed.display;
+
+                if (metricKey === 'headcount-flow') {
+                    const flowKey = targetInput.dataset.flowKey;
+                    const teamKey = `Team ${targetInput.dataset.team}`;
+                    const flows = AppState.teamData?.[AppState.currentForecast]?.[teamKey]?.headcountFlows;
+                    if (flows && flowKey) {
+                        if (!flows[flowKey]) flows[flowKey] = {};
+                        flows[flowKey][targetInput.dataset.month] = parsed.stored;
+                    }
+                    flowTouches.add(`${targetInput.dataset.team}|${targetInput.dataset.month}`);
+                }
                 // Build DB update
                 const { fieldName, dbValue } = getDbFieldAndValue(targetInput, metricKey, parsed.stored);
-                // Push update
-                updates.push({
-                    teamId: parseInt(targetInput.dataset.team),
-                    periodDate: getPeriodDate(targetInput.dataset.month),
-                    field: fieldName,
-                    newValue: dbValue
-                });
+                if (!fieldName) continue;
+                const teamId = parseInt(targetInput.dataset.team);
+                const periodDate = getPeriodDate(targetInput.dataset.month);
+                if (metricKey === 'headcount-flow') {
+                    flowUpdates.push({
+                        teamId,
+                        periodDate,
+                        field: fieldName,
+                        value: dbValue,
+                        dataType: 'forecast',
+                        versionId: AppState.currentVersion?.version_id,
+                        updatedBy: AppState.currentUser
+                    });
+                } else {
+                    // Push forecast update
+                    updates.push({
+                        teamId,
+                        periodDate,
+                        field: fieldName,
+                        newValue: dbValue
+                    });
+                }
                 // Track change for grouped undo
                 changes.push({
                     team: targetInput.dataset.team,
@@ -620,6 +1053,7 @@ function handleMatrixPaste(startInput, rawText) {
                     metric: metricKey,
                     product: targetInput.dataset.product,
                     pg: targetInput.dataset.pg,
+                    flow: targetInput.dataset.flowKey,
                     previousValue: previousValue,
                     newValue: parsed.stored
                 });
@@ -629,6 +1063,13 @@ function handleMatrixPaste(startInput, rawText) {
 
             // Move to next row (for multi-row paste)
             currentRow = findNextRowWithMetric(currentRow, metricKey);
+        }
+
+        if (metricKey === 'headcount-flow') {
+            flowTouches.forEach(token => {
+                const [teamId, month] = token.split('|');
+                updateHeadcountFlowDerived(teamId, month);
+            });
         }
     } finally {
         AppState.isBulkPasting = false;
@@ -656,6 +1097,22 @@ function handleMatrixPaste(startInput, rawText) {
         }).catch((error) => {
             console.error('Bulk update failed:', error);
             showError('Failed to save pasted values');
+            if (showBusy) hideLoadingIndicator();
+        });
+    }
+
+    if (flowUpdates.length > 0) {
+        const showBusy = flowUpdates.length > 50;
+        if (showBusy) showLoadingIndicator('Pasting...');
+        API.headcountFlows.bulkUpdate({
+            updates: flowUpdates,
+            updatedBy: AppState.currentUser
+        }).then(() => {
+            showSaveIndicator();
+            if (showBusy) hideLoadingIndicator();
+        }).catch((error) => {
+            console.error('Headcount flow bulk update failed:', error);
+            showError('Failed to save headcount flows');
             if (showBusy) hideLoadingIndicator();
         });
     }
@@ -870,6 +1327,52 @@ function initializeSidebar() {
     });
 }
 
+function suggestNextCycleName(versionName) {
+    const name = String(versionName || '').trim();
+    if (/^\d{1,2}\+\d{1,2}$/.test(name)) {
+        return '0+12';
+    }
+    return '0+12';
+}
+
+function hasBlockingValidationErrors() {
+    return !!document.querySelector('.invalid-input, .invalid');
+}
+
+function updateSaveLockButtonVisibility() {
+    const button = document.getElementById('saveLockForecastBtn');
+    if (!button) {
+        return;
+    }
+
+    const locked = !!AppState.currentVersion?.is_locked;
+    const shouldShow = AppState.isAdmin;
+    button.style.display = shouldShow ? '' : 'none';
+    button.disabled = !shouldShow || locked || AppState.isSaveLockInProgress;
+    if (locked) {
+        button.title = 'Current forecast is already locked';
+    } else {
+        button.title = '';
+    }
+}
+
+function applyLockedForecastUIState() {
+    const isLocked = !!AppState.currentVersion?.is_locked;
+    const wrappers = document.querySelectorAll('.tab-content .data-table-wrapper');
+    wrappers.forEach(wrapper => {
+        const inputs = wrapper.querySelectorAll('input');
+        inputs.forEach(input => {
+            if (isLocked) {
+                input.readOnly = true;
+                input.disabled = true;
+            } else {
+                input.readOnly = false;
+                input.disabled = false;
+            }
+        });
+    });
+}
+
 // Initialize forecast selector
 function initializeForecastSelector() {
     const forecastSelect = document.getElementById('forecastSelect');
@@ -878,13 +1381,17 @@ function initializeForecastSelector() {
     AppState.forecastVersions.forEach(version => {
         const option = document.createElement('option');
         option.value = version.version_id;
-        option.textContent = version.version_name;
+        option.textContent = version.is_locked
+            ? `${version.version_name} (Locked)`
+            : version.version_name;
         forecastSelect.appendChild(option);
     });
     
     if (AppState.currentVersion) {
         forecastSelect.value = AppState.currentVersion.version_id;
     }
+
+    updateSaveLockButtonVisibility();
 }
 
 // Load team data
@@ -904,7 +1411,22 @@ async function loadTeamData(teamId) {
             AppState.teamData[AppState.currentForecast] = {};
         }
         AppState.teamData[AppState.currentForecast][`Team ${teamId}`] = transformedData;
-        
+
+        if (typeof ensureBaselineStateInitialized === 'function') {
+            ensureBaselineStateInitialized(transformedData);
+        }
+        if (typeof applyProductionBaselines === 'function') {
+            applyProductionBaselines({
+                data: transformedData,
+                months: typeof generateMonthList === 'function' ? generateMonthList() : [],
+                teamId,
+                updateDom: false
+            });
+        }
+        if (typeof recalcForecastProductionTotals === 'function') {
+            recalcForecastProductionTotals(teamId);
+        }
+
         renderCurrentTab();
         hideLoadingIndicator();
         
@@ -939,6 +1461,12 @@ async function getGroupData(groupName) {
     }
     
     const months = generateMonthList();
+    const outboundFlows = Array.isArray(window.REFERRAL_OUTBOUND_FLOWS)
+        ? window.REFERRAL_OUTBOUND_FLOWS
+        : [];
+    const inboundFlows = Array.isArray(window.REFERRAL_INBOUND_FLOWS)
+        ? window.REFERRAL_INBOUND_FLOWS
+        : [];
     
     try {
         // Try to fetch from API first
@@ -960,7 +1488,16 @@ async function getGroupData(groupName) {
         productivity: {},
         productMix: {},
         abpa: {},
-        additionalProducts: {}
+        additionalProducts: {},
+        productionTotals: {},
+        deepening: {
+            amount: {},
+            percent: {}
+        },
+        referrals: {
+            outbound: {},
+            inbound: {}
+        }
     };
     
     // Initialize data structures
@@ -978,6 +1515,24 @@ async function getGroupData(groupName) {
         aggregatedData.additionalProducts[product] = {
             productivity: {},
             abpa: {}
+        };
+    });
+
+    outboundFlows.forEach(flow => {
+        const key = flow.key || flow;
+        aggregatedData.referrals.outbound[key] = {
+            productivity: {},
+            qualityReferrals: {},
+            totalActuals: {},
+            wonActuals: {}
+        };
+    });
+
+    inboundFlows.forEach(flow => {
+        const key = flow.key || flow;
+        aggregatedData.referrals.inbound[key] = {
+            productivity: {},
+            qualityReferrals: {}
         };
     });
     
@@ -1000,6 +1555,44 @@ async function getGroupData(groupName) {
     
     // Aggregate data for each month
     months.forEach(month => {
+        const monthBusinessDays = window.BUSINESS_DAYS?.[months.indexOf(month)] || 21;
+        let aggProductiveHeadcount = 0;
+        let aggTotalInvestmentAccounts = 0;
+        let aggInvestmentAccounts = 0;
+        let aggInvestmentAssets = 0;
+        let aggBankingAccounts = 0;
+        let aggBankingAssets = 0;
+        let productCAccountsSum = 0;
+        let productCBalanceSum = 0;
+        let aggDeepeningAmount = 0;
+        const teamHeadcountCache = {};
+
+        teamKeys.forEach(teamKey => {
+            const teamData = AppState.teamData[AppState.currentForecast]?.[teamKey];
+            const totals = teamData?.productionTotals?.[month];
+            if (!totals) return;
+            aggProductiveHeadcount += Number(totals.productiveHeadcount) || 0;
+            aggTotalInvestmentAccounts += Number(totals.totalInvestmentAccounts) || 0;
+            aggInvestmentAccounts += Number(totals.investmentAccounts) || 0;
+            aggInvestmentAssets += Number(totals.investmentAssets) || 0;
+            const pcAccounts = Number(totals.productCAccounts) || 0;
+            const pcAbpa = Number(totals.productCAbpa) || 0;
+            const pcBalanceValue = Number(totals.productCBalance);
+            productCAccountsSum += pcAccounts;
+            productCBalanceSum += Number.isFinite(pcBalanceValue) ? pcBalanceValue : (pcAccounts * pcAbpa);
+            aggBankingAccounts += Number(totals.bankingAccounts) || 0;
+            aggBankingAssets += Number(totals.bankingAssets) || 0;
+
+            const deepPercent = Number(teamData?.deepening?.percent?.[month]);
+            const deepAmount = Number(teamData?.deepening?.amount?.[month]);
+            const invAssets = Number(totals.investmentAssets) || 0;
+            if (Number.isFinite(deepAmount)) {
+                aggDeepeningAmount += deepAmount;
+            } else if (Number.isFinite(deepPercent) && invAssets > 0) {
+                aggDeepeningAmount += deepPercent * invAssets;
+            }
+        });
+
         // Sum headcount across all teams - ENSURE NUMBERS NOT STRINGS
         PG_LEVELS.forEach(pg => {
             aggregatedData.pgLevels[pg][month] = teamKeys.reduce((sum, teamKey) => {
@@ -1023,6 +1616,7 @@ async function getGroupData(groupName) {
                 // FORCE CONVERSION TO NUMBER
                 return sum + (typeof value === 'string' ? parseInt(value) : value);
             }, 0);
+            teamHeadcountCache[teamKey] = teamHeadcount;
             totalHeadcount += teamHeadcount;
             const productivity = parseFloat(teamData.productivity[month] || 0);
             weightedProductivity += teamHeadcount * productivity;
@@ -1104,6 +1698,121 @@ async function getGroupData(groupName) {
             aggregatedData.additionalProducts[product].abpa[month] = 
                 totalAdditionalAccounts > 0 ? Math.round(totalAdditionalBalance / totalAdditionalAccounts) : 0;
         });
+
+        const productCAbpaValue = productCAccountsSum > 0 ? productCBalanceSum / productCAccountsSum : 0;
+        outboundFlows.forEach(flow => {
+            const key = flow.key || flow;
+            const store = aggregatedData.referrals.outbound[key];
+            if (!store) {
+                return;
+            }
+            let totalHeadcountForFlow = 0;
+            let weightedQuality = 0;
+            let totalActual = 0;
+            let totalWon = 0;
+            let actualQualitySum = 0;
+            let hasActualQuality = false;
+
+            teamKeys.forEach(teamKey => {
+                const teamData = AppState.teamData[AppState.currentForecast]?.[teamKey];
+                if (!teamData) return;
+                const teamHeadcount = teamHeadcountCache[teamKey];
+                if (!Number.isFinite(teamHeadcount) || teamHeadcount <= 0) {
+                    return;
+                }
+                const prodValue = Number.parseFloat(
+                    teamData.referrals?.outbound?.[key]?.productivity?.[month] || 0
+                );
+                totalHeadcountForFlow += teamHeadcount;
+                weightedQuality += (teamHeadcount * prodValue * monthBusinessDays) / 5;
+                const storedQuality = Number(teamData.referrals?.outbound?.[key]?.qualityReferrals?.[month]);
+                if (Number.isFinite(storedQuality)) {
+                    actualQualitySum += storedQuality;
+                    hasActualQuality = true;
+                }
+
+                const totalValue = Number(teamData.referrals?.outbound?.[key]?.totalActuals?.[month]);
+                if (Number.isFinite(totalValue)) {
+                    totalActual += totalValue;
+                }
+                const wonValue = Number(teamData.referrals?.outbound?.[key]?.wonActuals?.[month]);
+                if (Number.isFinite(wonValue)) {
+                    totalWon += wonValue;
+                }
+            });
+
+            const status = aggregatedData.forecastStatus?.[month];
+            const isForecast = status === 'Forecast';
+            const qualitySource = (isForecast || !hasActualQuality) ? weightedQuality : actualQualitySum;
+
+            const aggregatedProd = (totalHeadcountForFlow > 0 && monthBusinessDays > 0)
+                ? ((qualitySource * 5) / (totalHeadcountForFlow * monthBusinessDays))
+                : 0;
+
+            store.productivity[month] = aggregatedProd.toFixed(2);
+            store.qualityReferrals[month] = Math.round(Math.max(0, qualitySource));
+            store.totalActuals[month] = Math.round(totalActual);
+            store.wonActuals[month] = Math.round(totalWon);
+        });
+
+        inboundFlows.forEach(flow => {
+            const key = flow.key || flow;
+            const store = aggregatedData.referrals.inbound[key];
+            if (!store) {
+                return;
+            }
+            let totalHeadcountForFlow = 0;
+            let weightedQuality = 0;
+            let actualQualitySum = 0;
+            let hasActualQuality = false;
+
+            teamKeys.forEach(teamKey => {
+                const teamData = AppState.teamData[AppState.currentForecast]?.[teamKey];
+                if (!teamData) return;
+                const teamHeadcount = teamHeadcountCache[teamKey];
+                if (!Number.isFinite(teamHeadcount) || teamHeadcount <= 0) {
+                    return;
+                }
+                const prodValue = Number.parseFloat(
+                    teamData.referrals?.inbound?.[key]?.productivity?.[month] || 0
+                );
+                totalHeadcountForFlow += teamHeadcount;
+                weightedQuality += (teamHeadcount * prodValue * monthBusinessDays) / 5;
+                const storedQuality = Number(teamData.referrals?.inbound?.[key]?.qualityReferrals?.[month]);
+                if (Number.isFinite(storedQuality)) {
+                    actualQualitySum += storedQuality;
+                    hasActualQuality = true;
+                }
+            });
+
+            const status = aggregatedData.forecastStatus?.[month];
+            const isForecast = status === 'Forecast';
+            const qualitySource = (isForecast || !hasActualQuality) ? weightedQuality : actualQualitySum;
+
+            const aggregatedProd = (totalHeadcountForFlow > 0 && monthBusinessDays > 0)
+                ? ((qualitySource * 5) / (totalHeadcountForFlow * monthBusinessDays))
+                : 0;
+
+            store.productivity[month] = aggregatedProd.toFixed(2);
+            store.qualityReferrals[month] = Math.round(Math.max(0, qualitySource));
+        });
+
+        aggregatedData.productionTotals[month] = {
+            businessDays: monthBusinessDays,
+            productiveHeadcount: aggProductiveHeadcount,
+            totalInvestmentAccounts: aggTotalInvestmentAccounts,
+            investmentAccounts: aggInvestmentAccounts,
+            investmentAssets: aggInvestmentAssets,
+            productCAccounts: productCAccountsSum,
+            productCAbpa: productCAbpaValue,
+            productCBalance: productCBalanceSum,
+            bankingAccounts: aggBankingAccounts,
+            bankingAssets: aggBankingAssets
+        };
+        const totalBalanceForDeepening = aggInvestmentAssets;
+        const deepPct = totalBalanceForDeepening > 0 ? aggDeepeningAmount / totalBalanceForDeepening : 0;
+        aggregatedData.deepening.amount[month] = aggDeepeningAmount;
+        aggregatedData.deepening.percent[month] = deepPct;
     });
     
     return aggregatedData;
@@ -1111,8 +1820,18 @@ async function getGroupData(groupName) {
 
 // Transform API data to frontend format
 function transformApiData(apiData) {
+    const outboundFlows = Array.isArray(window.REFERRAL_OUTBOUND_FLOWS)
+        ? window.REFERRAL_OUTBOUND_FLOWS
+        : [];
+    const inboundFlows = Array.isArray(window.REFERRAL_INBOUND_FLOWS)
+        ? window.REFERRAL_INBOUND_FLOWS
+        : [];
     const transformed = {
         forecastStatus: {},
+        deepening: {
+            amount: {},
+            percent: {}
+        },
         headcountFlows: {
             starting_headcount: {},
             flow_1: {},
@@ -1133,7 +1852,16 @@ function transformApiData(apiData) {
             'Product A': {}, 'Product B': {}, 'Product C': {}, 'Product D': {}
         },
         // Add structure for additional products
-        additionalProducts: {}
+        additionalProducts: {},
+        productionTotals: {},
+        deepening: {
+            amount: {},
+            percent: {}
+        },
+        referrals: {
+            outbound: {},
+            inbound: {}
+        }
     };
 
     // Initialize additional products
@@ -1141,6 +1869,24 @@ function transformApiData(apiData) {
         transformed.additionalProducts[product] = {
             productivity: {},
             abpa: {}
+        };
+    });
+
+    outboundFlows.forEach(flow => {
+        const key = flow.key || flow;
+        transformed.referrals.outbound[key] = {
+            productivity: {},
+            qualityReferrals: {},
+            totalActuals: {},
+            wonActuals: {}
+        };
+    });
+
+    inboundFlows.forEach(flow => {
+        const key = flow.key || flow;
+        transformed.referrals.inbound[key] = {
+            productivity: {},
+            qualityReferrals: {}
         };
     });
 
@@ -1186,15 +1932,151 @@ function transformApiData(apiData) {
         transformed.abpa['Product C'][period] = Math.round(parseFloat(row.product_c_abpa) || 0);
         transformed.abpa['Product D'][period] = Math.round(parseFloat(row.product_d_abpa) || 0);
 
+        outboundFlows.forEach(flow => {
+            const key = flow.key || flow;
+            const store = transformed.referrals.outbound[key];
+            if (!store) {
+                return;
+            }
+            const prodField = `ref_out_${key}_prod`;
+            const qualityField = `ref_out_${key}_quality`;
+            const totalField = `ref_out_${key}_total`;
+            const wonField = `ref_out_${key}_won`;
+            const prodValue = Number.parseFloat(row[prodField]) || 0;
+            store.productivity[period] = prodValue.toFixed(2);
+            const qualityValue = Number(row[qualityField]);
+            if (Number.isFinite(qualityValue)) {
+                store.qualityReferrals[period] = qualityValue;
+            }
+            const totalValue = Number(row[totalField]);
+            store.totalActuals[period] = Number.isFinite(totalValue) ? totalValue : 0;
+            const wonValue = Number(row[wonField]);
+            store.wonActuals[period] = Number.isFinite(wonValue) ? wonValue : 0;
+        });
+
+        inboundFlows.forEach(flow => {
+            const key = flow.key || flow;
+            const store = transformed.referrals.inbound[key];
+            if (!store) {
+                return;
+            }
+            const prodField = `ref_in_${key}_prod`;
+            const prodValue = Number.parseFloat(row[prodField]) || 0;
+            store.productivity[period] = prodValue.toFixed(2);
+            const qualityField = `ref_in_${key}_quality`;
+            const qualityValue = Number(row[qualityField]);
+            if (Number.isFinite(qualityValue)) {
+                store.qualityReferrals[period] = qualityValue;
+            }
+        });
+
         // Transform additional products
         ADDITIONAL_PRODUCTS.forEach(product => {
             const prodLower = product.toLowerCase();
             const prodKey = 'product_' + prodLower;
-            transformed.additionalProducts[product].productivity[period] =
-                parseFloat(row[prodKey + '_productivity'] || 0).toFixed(2);
-            transformed.additionalProducts[product].abpa[period] =
-                Math.round(parseFloat(row[prodKey + '_abpa'] || 0));
-        });
+        transformed.additionalProducts[product].productivity[period] = 
+            parseFloat(row[prodKey + '_productivity'] || 0).toFixed(2);
+        transformed.additionalProducts[product].abpa[period] =
+            Math.round(parseFloat(row[prodKey + '_abpa'] || 0));
+    });
+
+        const businessDays = parseInt(row.business_days, 10) || 21;
+        const pgValues = [
+            transformed.pgLevels.PG1[period],
+            transformed.pgLevels.PG2[period],
+            transformed.pgLevels.PG3[period],
+            transformed.pgLevels.PG4[period],
+            transformed.pgLevels.PG5[period],
+            transformed.pgLevels.PG6[period],
+            transformed.pgLevels.PG7[period]
+        ];
+        const productiveHeadcount = pgValues.reduce((sum, value) => sum + (Number(value) || 0), 0);
+        const weeklyProd = parseFloat(transformed.productivity[period]) || 0;
+        const totalInvestmentAccounts = Math.round((productiveHeadcount * weeklyProd * businessDays) / 5);
+
+        let investmentAccountsTotal = 0;
+        let investmentAssetsTotal = 0;
+        let productCAccountsTotal = 0;
+        let productCAbpaValue = 0;
+
+        if (Array.isArray(PRODUCTS)) {
+            PRODUCTS.forEach(product => {
+                const mix = transformed.productMix?.[product]?.[period] || 0;
+                const accounts = Math.round(totalInvestmentAccounts * mix);
+                const abpaValue = transformed.abpa?.[product]?.[period] || 0;
+                investmentAccountsTotal += accounts;
+                investmentAssetsTotal += accounts * abpaValue;
+                if (product === 'Product C') {
+                    productCAccountsTotal = accounts;
+                    productCAbpaValue = abpaValue;
+                }
+            });
+        }
+
+        let bankingAccountsTotal = 0;
+        let bankingAssetsTotal = 0;
+        if (Array.isArray(ADDITIONAL_PRODUCTS)) {
+            ADDITIONAL_PRODUCTS.forEach(product => {
+                const weeklyProdAdd = parseFloat(transformed.additionalProducts?.[product]?.productivity?.[period] || 0);
+                const abpaValue = transformed.additionalProducts?.[product]?.abpa?.[period] || 0;
+                const accounts = Math.round((productiveHeadcount * weeklyProdAdd * businessDays) / 5);
+                bankingAccountsTotal += accounts;
+                bankingAssetsTotal += accounts * abpaValue;
+            });
+        }
+
+        const productCBalance = productCAccountsTotal * productCAbpaValue;
+
+        transformed.productionTotals[period] = {
+            businessDays,
+            productiveHeadcount,
+            totalInvestmentAccounts,
+            investmentAccounts: investmentAccountsTotal,
+            investmentAssets: investmentAssetsTotal,
+            productCAccounts: productCAccountsTotal,
+            productCAbpa: productCAbpaValue,
+            productCBalance,
+            bankingAccounts: bankingAccountsTotal,
+            bankingAssets: bankingAssetsTotal
+        };
+
+        const deepPercentValue = Number(row.deepening_percent);
+        const deepAmountValue = Number(row.deepening_amount);
+        const totalBalanceCalc = Number(row.total_balance_calc);
+        if (Number.isFinite(deepPercentValue)) {
+            transformed.deepening.percent[period] = deepPercentValue;
+        }
+        if (Number.isFinite(deepAmountValue)) {
+            transformed.deepening.amount[period] = deepAmountValue;
+        } else if (Number.isFinite(deepPercentValue) && Number.isFinite(totalBalanceCalc)) {
+            transformed.deepening.amount[period] = deepPercentValue * totalBalanceCalc;
+        }
+        if (!Number.isFinite(transformed.deepening.percent[period])) {
+            const derivedAmount = Number(transformed.deepening.amount[period]);
+            transformed.deepening.percent[period] = (Number.isFinite(derivedAmount) && Number.isFinite(totalBalanceCalc) && totalBalanceCalc > 0)
+                ? derivedAmount / totalBalanceCalc
+                : 0;
+        }
+        if (!Number.isFinite(transformed.deepening.amount[period])) {
+            transformed.deepening.amount[period] = 0;
+        }
+        if (!Number.isFinite(transformed.deepening.percent[period])) {
+            let hash = 0;
+            const seed = `${row.team_id || row.team || 'seed'}-${period}-deepening`;
+            for (let i = 0; i < seed.length; i++) {
+                hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+                hash |= 0;
+            }
+            const ratio = 0.10 + (Math.abs(hash) % 1501) / 10000;
+            const balanceFallback = Number.isFinite(totalBalanceCalc) ? totalBalanceCalc : investmentAssetsTotal;
+            transformed.deepening.percent[period] = ratio;
+            transformed.deepening.amount[period] = Number.isFinite(balanceFallback) ? ratio * balanceFallback : (transformed.deepening.amount[period] || 0);
+        } else if (!Number.isFinite(Number(row.deepening_amount))) {
+            const balanceFallback = Number.isFinite(totalBalanceCalc) ? totalBalanceCalc : investmentAssetsTotal;
+            if (Number.isFinite(balanceFallback)) {
+                transformed.deepening.amount[period] = transformed.deepening.percent[period] * balanceFallback;
+            }
+        }
     });
 
     return transformed;
@@ -1293,9 +2175,21 @@ async function switchTeam(teamNumber) {
     AppState.currentTeam = teamNumber;
     AppState.currentGroup = null;
     AppState.isGroupView = false;
+    updateAdminButtonsVisibility();
     
     // Clear scroll positions to trigger Jan-24 scroll on new team
-    AppState.scrollPositions = { headcount: 0, production: 0 };
+    AppState.scrollPositions = {
+        headcount: 0,
+        headcount_sales: 0,
+        headcount_non_sales: 0,
+        production: 0,
+        production_investments: 0,
+        production_banking: 0,
+        referrals: 0,
+        incentive: 0,
+        kmpc: 0,
+        finance: 0
+    };
     
     // Update UI active states
     document.querySelectorAll('.team-nav a, .group-header').forEach(el => {
@@ -1320,9 +2214,10 @@ async function switchTeam(teamNumber) {
     // Restore scroll position
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-            const newWrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
-            if (newWrapper && AppState.scrollPositions[AppState.currentTab] !== undefined) {
-                newWrapper.scrollLeft = AppState.scrollPositions[AppState.currentTab];
+            const newWrapper = getActiveWrapper();
+            const key = getScrollKeyForState();
+            if (newWrapper && AppState.scrollPositions[key] !== undefined) {
+                newWrapper.scrollLeft = AppState.scrollPositions[key];
             }
         });
     });
@@ -1331,13 +2226,14 @@ async function switchTeam(teamNumber) {
 // Switch to group view
 async function switchToGroup(groupName) {
     // Save current scroll position
-    const currentWrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+    const currentWrapper = getActiveWrapper();
     if (currentWrapper) {
-        AppState.scrollPositions[AppState.currentTab] = currentWrapper.scrollLeft;
+        AppState.scrollPositions[getScrollKeyForState()] = currentWrapper.scrollLeft;
     }
     
     AppState.currentGroup = groupName;
     AppState.isGroupView = true;
+    updateAdminButtonsVisibility();
     
     // Update UI
     document.querySelectorAll('.team-nav a, .group-header').forEach(el => {
@@ -1361,9 +2257,10 @@ async function switchToGroup(groupName) {
     // Restore scroll position
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-            const newWrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
-            if (newWrapper && AppState.scrollPositions[AppState.currentTab] !== undefined) {
-                newWrapper.scrollLeft = AppState.scrollPositions[AppState.currentTab];
+            const newWrapper = getActiveWrapper();
+            const key = getScrollKeyForState();
+            if (newWrapper && AppState.scrollPositions[key] !== undefined) {
+                newWrapper.scrollLeft = AppState.scrollPositions[key];
             }
         });
     });
@@ -1372,9 +2269,9 @@ async function switchToGroup(groupName) {
 // Switch forecast version
 async function switchForecast() {
     // Save current scroll position BEFORE switching
-    const currentWrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+    const currentWrapper = getActiveWrapper();
     if (currentWrapper) {
-        AppState.scrollPositions[AppState.currentTab] = currentWrapper.scrollLeft;
+        AppState.scrollPositions[getScrollKeyForState()] = currentWrapper.scrollLeft;
     }
     
     const forecastSelect = document.getElementById('forecastSelect');
@@ -1389,6 +2286,7 @@ async function switchForecast() {
         return;
     }
     AppState.currentForecast = AppState.currentVersion.version_name;
+    updateSaveLockButtonVisibility();
     
     await loadProductionConfig(AppState.currentVersion.version_id);
     
@@ -1412,13 +2310,14 @@ async function switchForecast() {
 
 // Switch between tabs (callable from code or click)
 function switchTab(tabName) {
-    // Save current scroll position
-    const currentWrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+    const previousKey = getScrollKeyForState();
+    const currentWrapper = getActiveWrapper();
     if (currentWrapper) {
-        AppState.scrollPositions[AppState.currentTab] = currentWrapper.scrollLeft;
+        AppState.scrollPositions[previousKey] = currentWrapper.scrollLeft;
     }
     
     AppState.currentTab = tabName;
+    updateAdminButtonsVisibility();
     
     // Update UI
     const tabButtons = document.querySelectorAll('.tabs .tab');
@@ -1463,10 +2362,7 @@ function switchTab(tabName) {
     }
     if (tabName === 'production') {
         const invC = document.getElementById('production-investments-subtab');
-        const toolbarCaption = document.querySelector('.production-toolbar-caption');
-        if (toolbarCaption) {
-            toolbarCaption.classList.toggle('baseline-note--active', AppState.productionSubtab === 'investments');
-        }
+        updateProductionToolbarCaption(AppState.productionSubtab);
         const bankC = document.getElementById('production-banking-subtab');
         if (invC) {
             invC.style.display = AppState.productionSubtab === 'investments' ? '' : 'none';
@@ -1484,12 +2380,138 @@ function switchTab(tabName) {
     // Restore scroll position
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-            const newWrapper = document.querySelector(`#${tabName}-tab .data-table-wrapper`);
-            if (newWrapper && AppState.scrollPositions[tabName] !== undefined) {
-                newWrapper.scrollLeft = AppState.scrollPositions[tabName];
+            const newWrapper = getActiveWrapper();
+            const key = getScrollKeyForState();
+            if (newWrapper && AppState.scrollPositions[key] !== undefined) {
+                newWrapper.scrollLeft = AppState.scrollPositions[key];
             }
+            applyLockedForecastUIState();
         });
     });
+}
+
+async function saveLockAndCloneForecastCycle() {
+    if (!AppState.isAdmin) {
+        showError('Only admins can save, lock, and clone forecast cycles.');
+        return;
+    }
+
+    if (!AppState.currentVersion || !AppState.currentVersion.version_id) {
+        showError('Select a forecast version first.');
+        return;
+    }
+
+    if (AppState.currentVersion.is_locked) {
+        showError('This forecast is already locked.');
+        return;
+    }
+
+    if (hasBlockingValidationErrors()) {
+        showError('Resolve highlighted validation errors before locking the forecast.');
+        return;
+    }
+
+    if (API.hasPendingRequests()) {
+        showError('Please wait for all pending saves to complete before locking.');
+        return;
+    }
+
+    const currentName = AppState.currentVersion.version_name;
+    const suggested = suggestNextCycleName(currentName);
+    const nextVersionName = window.prompt(
+        'Enter the name of the new cycle baseline:',
+        suggested
+    );
+
+    if (nextVersionName == null) {
+        return;
+    }
+
+    const trimmedName = String(nextVersionName).trim();
+    if (!trimmedName) {
+        showError('Next cycle name is required.');
+        return;
+    }
+
+    const shouldProceed = window.confirm(
+        `This will lock "${currentName}" and create "${trimmedName}" as a full copy.\n\nThis action cannot be undone.`
+    );
+    if (!shouldProceed) {
+        return;
+    }
+
+    const typed = window.prompt(
+        `Type "${SAVE_AND_LOCK_CONFIRMATION}" to confirm:`,
+        ''
+    );
+
+    if (typed !== SAVE_AND_LOCK_CONFIRMATION) {
+        showError('Confirmation text did not match. No changes were made.');
+        return;
+    }
+
+    const saveLockButton = document.getElementById('saveLockForecastBtn');
+    AppState.isSaveLockInProgress = true;
+    if (saveLockButton) {
+        saveLockButton.disabled = true;
+    }
+
+    try {
+        showLoadingIndicator('Saving, locking, and creating next cycle...');
+        const result = await API.forecasts.saveLockAndCloneCycle({
+            sourceVersionId: AppState.currentVersion.version_id,
+            nextVersionName: trimmedName,
+            confirmationText: SAVE_AND_LOCK_CONFIRMATION,
+            userEmail: AppState.currentUser
+        });
+
+        const versions = await API.forecasts.getVersions();
+        AppState.forecastVersions = versions;
+
+        const newVersionId = result?.data?.newVersionId;
+        if (newVersionId) {
+            AppState.currentVersion = versions.find(v => Number(v.version_id) === Number(newVersionId)) || versions[0] || null;
+            AppState.currentForecast = AppState.currentVersion ? AppState.currentVersion.version_name : null;
+        } else {
+            AppState.currentVersion = versions[0] || null;
+            AppState.currentForecast = AppState.currentVersion ? AppState.currentVersion.version_name : null;
+        }
+
+        initializeForecastSelector();
+        if (AppState.currentVersion) {
+            await switchForecast();
+        }
+        showSaveIndicator();
+    } catch (error) {
+        console.error('Failed to save/lock/clone forecast cycle:', error);
+        showError(error.message || 'Failed to save, lock, and clone forecast cycle.');
+    } finally {
+        hideLoadingIndicator();
+        AppState.isSaveLockInProgress = false;
+        updateSaveLockButtonVisibility();
+    }
+}
+
+function updateAdminButtonsVisibility() {
+    const productionAdminButton = document.getElementById('production-admin-btn');
+    if (productionAdminButton) {
+        const shouldShowProduction = AppState.currentTab === 'production' && !AppState.isGroupView;
+        productionAdminButton.style.display = shouldShowProduction ? '' : 'none';
+    }
+
+    const incentiveAdminButton = document.getElementById('incentive-admin-btn');
+    if (incentiveAdminButton) {
+        const shouldShowIncentive = AppState.currentTab === 'incentive' && !AppState.isGroupView;
+        incentiveAdminButton.style.display = shouldShowIncentive ? '' : 'none';
+    }
+
+    const referralAdminButton = document.getElementById('referral-admin-btn');
+    if (referralAdminButton) {
+        const shouldShowReferral = AppState.currentTab === 'referrals' && !AppState.isGroupView;
+        referralAdminButton.style.display = shouldShowReferral ? '' : 'none';
+    }
+
+    updateSaveLockButtonVisibility();
 }
 
 // Toggle group collapse/expand
@@ -1505,6 +2527,7 @@ function toggleGroup(header) {
 
 // Render current tab
 async function renderCurrentTab() {
+    updateAdminButtonsVisibility();
     if (AppState.currentTab === 'headcount') {
         const subtabs = document.getElementById('headcount-subtabs');
         if (subtabs) {
@@ -1601,6 +2624,7 @@ async function renderCurrentTab() {
             }
 
             renderNonSalesHeadcountTab(nsGroupData, { containerId: 'non-sales-headcount-subtab' });
+            applyLockedForecastUIState();
             return;
         }
 
@@ -1654,6 +2678,7 @@ async function renderCurrentTab() {
         }
 
         renderHeadcountTab(data, { containerId: 'sales-headcount-subtab', mode: 'sales' });
+        applyLockedForecastUIState();
         return;
     }
 
@@ -1698,7 +2723,7 @@ async function renderCurrentTab() {
             break;
         }
         case 'referrals':
-            renderReferralsTab(data);
+            await renderReferralsTab(data);
             break;
         case 'incentive':
             renderIncentiveTab(data);
@@ -1710,6 +2735,8 @@ async function renderCurrentTab() {
             renderFinanceTab(data);
             break;
     }
+
+    applyLockedForecastUIState();
 }
 
 // Handle headcount changes
@@ -1794,6 +2821,64 @@ async function handleHeadcountChange(input) {
     }
 }
 
+async function handleHeadcountFlowChange(input) {
+    if (!input) return;
+
+    const month = input.dataset.month;
+    const flowKey = input.dataset.flowKey;
+    const team = input.dataset.team;
+
+    if (!month || !flowKey || !team) return;
+
+    const raw = (input.value || '').trim();
+    const numeric = raw === '' || raw === '-' ? 0 : Number(raw);
+    if (!Number.isFinite(numeric)) {
+        input.classList.add('invalid-input');
+        return;
+    }
+    input.classList.remove('invalid-input');
+
+    const teamKey = `Team ${team}`;
+    const teamStore = AppState.teamData?.[AppState.currentForecast]?.[teamKey];
+    if (!teamStore || !teamStore.headcountFlows || !teamStore.headcountFlows[flowKey]) {
+        return;
+    }
+
+    const previousValue = Number(teamStore.headcountFlows[flowKey][month] ?? 0);
+    teamStore.headcountFlows[flowKey][month] = numeric;
+    updateHeadcountFlowDerived(team, month);
+
+    if (!AppState.isBulkPasting && !AppState.isProgrammaticChange) {
+        AppState.undoStack.push({
+            type: 'headcountFlowChange',
+            data: { team, flowKey, month, previousValue, newValue: numeric },
+            context: { tab: 'headcount', subtab: 'sales' }
+        });
+        AppState.redoStack = [];
+        updateUndoRedoButtons();
+    }
+
+    if (!AppState.isBulkPasting && !AppState.isProgrammaticChange) {
+        try {
+            await API.headcountFlows.bulkUpdate({
+                updates: [{
+                    teamId: parseInt(team, 10),
+                    periodDate: getPeriodDate(month),
+                    field: flowKey,
+                    value: numeric,
+                    dataType: 'forecast',
+                    versionId: AppState.currentVersion?.version_id,
+                    updatedBy: AppState.currentUser
+                }]
+            });
+            showSaveIndicator();
+        } catch (error) {
+            console.error('Failed to save headcount flow change:', error);
+            showError('Failed to save headcount flow');
+        }
+    }
+}
+
 async function handleProductionChange(input) {
     if (!input) return;
 
@@ -1843,6 +2928,13 @@ async function handleProductionChange(input) {
         value = Math.max(0, Math.round(value));
         input.value = String(value);
         value = value * 1000;
+    } else if (metric === 'deepening-percent') {
+        value = Number(rawIn);
+        if (!Number.isFinite(value)) {
+            value = toNumber((teamData.deepening?.percent?.[month] || 0) * 100, 0);
+        }
+        value = clamp(value, 0, 100);
+        input.value = value.toFixed(1);
     } else {
         value = Number(rawIn);
         if (!Number.isFinite(value)) {
@@ -1857,6 +2949,8 @@ async function handleProductionChange(input) {
         previousValue = toNumber(teamData.productMix[product][month], 0) * 100;
     } else if (metric === 'abpa') {
         previousValue = toNumber(teamData.abpa[product][month], 0);
+    } else if (metric === 'deepening-percent') {
+        previousValue = toNumber((teamData.deepening?.percent?.[month] || 0) * 100, 0);
     } else {
         previousValue = null;
     }
@@ -1884,6 +2978,14 @@ async function handleProductionChange(input) {
         teamData.productMix[product][month] = value / 100;
     } else if (metric === 'abpa') {
         teamData.abpa[product][month] = value;
+    } else if (metric === 'deepening-percent') {
+        if (!teamData.deepening) {
+            teamData.deepening = { amount: {}, percent: {} };
+        } else {
+            teamData.deepening.percent = teamData.deepening.percent || {};
+            teamData.deepening.amount = teamData.deepening.amount || {};
+        }
+        teamData.deepening.percent[month] = value / 100;
     }
 
     updateProductionCalculations(team, month);
@@ -1899,6 +3001,9 @@ async function handleProductionChange(input) {
     } else if (metric === 'abpa') {
         const productLetter = product.split(' ')[1].toLowerCase();
         fieldName = `product_${productLetter}_abpa`;
+    } else if (metric === 'deepening-percent') {
+        fieldName = 'deepening_percent';
+        dbValue = value / 100;
     }
 
     if (!AppState.isBulkPasting && fieldName) {
@@ -1917,6 +3022,59 @@ async function handleProductionChange(input) {
             console.error('Failed to save change:', error);
             showError('Failed to save change');
         }
+    }
+}
+
+async function handleReferralProductivityChange(input) {
+    if (!input) return;
+
+    const month = input.dataset.month;
+    const team = input.dataset.team;
+    const flowKey = input.dataset.flowKey;
+    if (!month || !team || !flowKey) {
+        return;
+    }
+
+    const rawIn = (input.value || '').trim();
+    if (rawIn === '' || rawIn === '-') {
+        input.classList.add('invalid-input');
+        return;
+    }
+    input.classList.remove('invalid-input');
+
+    const teamKey = `Team ${team}`;
+    const teamData = AppState.teamData[AppState.currentForecast]?.[teamKey];
+    if (!teamData || !teamData.referrals?.outbound?.[flowKey]) {
+        return;
+    }
+
+    let value = Number.parseFloat(rawIn);
+    if (!Number.isFinite(value)) {
+        value = Number.parseFloat(teamData.referrals.outbound[flowKey].productivity[month] || 0);
+    }
+    value = Number(value.toFixed(2));
+    input.value = value.toFixed(2);
+
+    teamData.referrals.outbound[flowKey].productivity[month] = value.toFixed(2);
+    updateReferralCalculations(team, month, flowKey);
+
+    if (!AppState.currentVersion) {
+        return;
+    }
+
+    try {
+        await API.forecasts.updateData({
+            teamId: parseInt(team, 10),
+            periodDate: getPeriodDate(month),
+            versionId: AppState.currentVersion.version_id,
+            field: `ref_out_${flowKey}_prod`,
+            value,
+            updatedBy: AppState.currentUser
+        });
+        showSaveIndicator();
+    } catch (error) {
+        console.error('Failed to save referral productivity change:', error);
+        showError('Failed to save referral productivity');
     }
 }
 
@@ -2048,6 +3206,10 @@ function updateAdditionalProductCalculations(team, month, product) {
     if (accCell) accCell.textContent = (accounts).toLocaleString();
     const balCell = document.getElementById(`additional-balance-${product}-${month}`);
     if (balCell) balCell.textContent = `$${(balance / 1_000_000).toFixed(1)}M`;
+
+    if (typeof recalculateBankingTotals === 'function') {
+        recalculateBankingTotals(team);
+    }
 }
 
 // Undo functionality
@@ -2088,6 +3250,27 @@ function undo() {
             updateProductionCalculations(team, month);
         };
         requestAnimationFrame(() => { renderCurrentTab(); requestAnimationFrame(setValUndo); });
+    } else if (action.type === 'headcountFlowChange') {
+        const { team, flowKey, month, previousValue } = action.data;
+        const teamKey = `Team ${team}`;
+        const flows = AppState.teamData[AppState.currentForecast][teamKey]?.headcountFlows;
+        if (flows && flows[flowKey]) {
+            flows[flowKey][month] = Number(previousValue) || 0;
+        }
+        const applyFlowUndo = () => {
+            const selector = `#sales-headcount-subtab input[data-month='${month}'][data-flow-key='${flowKey}'][data-team='${team}']`;
+            const inputEl = document.querySelector(selector);
+            if (inputEl) {
+                inputEl.value = Number(previousValue) || 0;
+            }
+            const displayCell = document.querySelector(`td[data-flow-team='${team}'][data-flow-key='${flowKey}'][data-month='${month}']`);
+            if (displayCell) displayCell.textContent = Number(previousValue) || 0;
+            updateHeadcountFlowDerived(team, month);
+        };
+        requestAnimationFrame(() => {
+            renderCurrentTab();
+            requestAnimationFrame(applyFlowUndo);
+        });
     } else if (action.type === 'nonSalesHeadcountChange') {
         const { groupKey, teamId, month, previousValue } = action.data;
         const versionKey = AppState.currentForecast;
@@ -2141,6 +3324,13 @@ function undo() {
             // Update the input directly
             const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='abpa'][data-team='${team}']`);
             if (input) input.value = String(Math.round((previousValue || 0) / 1000));
+        } else if (metric === 'deepening-percent') {
+            if (!AppState.teamData[AppState.currentForecast][teamKey].deepening) {
+                AppState.teamData[AppState.currentForecast][teamKey].deepening = { amount: {}, percent: {} };
+            }
+            AppState.teamData[AppState.currentForecast][teamKey].deepening.percent[month] = (parseFloat(previousValue) || 0) / 100;
+            const input = document.querySelector(`input[data-month='${month}'][data-metric='deepening-percent'][data-team='${team}']`);
+            if (input) input.value = parseFloat(previousValue || 0).toFixed(1);
         }
         
         updateProductionCalculations(team, month);
@@ -2179,6 +3369,13 @@ function undo() {
                 AppState.teamData[AppState.currentForecast][teamKey].abpa[state.product][state.month] = parseInt(state.previousValue);
                 const input = document.querySelector(`input[data-month='${state.month}'][data-product='${state.product}'][data-metric='abpa'][data-team='${state.team}']`);
                 if (input) input.value = String(Math.round((state.previousValue || 0) / 1000));
+            } else if (state.metric === 'deepening-percent' || state.metric === 'deepening_percent') {
+                if (!AppState.teamData[AppState.currentForecast][teamKey].deepening) {
+                    AppState.teamData[AppState.currentForecast][teamKey].deepening = { amount: {}, percent: {} };
+                }
+                AppState.teamData[AppState.currentForecast][teamKey].deepening.percent[state.month] = (parseFloat(state.previousValue) || 0) / 100;
+                const input = document.querySelector(`input[data-month='${state.month}'][data-metric='deepening-percent'][data-team='${state.team}']`);
+                if (input) input.value = parseFloat(state.previousValue || 0).toFixed(1);
             } else if (state.metric === 'additional-productivity') {
                 AppState.teamData[AppState.currentForecast][teamKey]
                     .additionalProducts[state.product].productivity[state.month] = parseFloat(state.previousValue).toFixed(2);
@@ -2204,6 +3401,7 @@ function undo() {
             const metric = state.metric;
             const product = state.product;
             const pg = state.pg;
+            const flowKey = state.flow;
             const previousValue = state.previousValue;
 
             if (metric === 'headcount') {
@@ -2227,6 +3425,14 @@ function undo() {
                 const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='abpa'][data-team='${state.team}']`);
                 if (input) input.value = String(Math.round((previousValue || 0) / 1000));
                 updateProductionCalculations(state.team, month);
+            } else if (metric === 'deepening-percent' || metric === 'deepening_percent') {
+                if (!AppState.teamData[AppState.currentForecast][teamKey].deepening) {
+                    AppState.teamData[AppState.currentForecast][teamKey].deepening = { amount: {}, percent: {} };
+                }
+                AppState.teamData[AppState.currentForecast][teamKey].deepening.percent[month] = (parseFloat(previousValue) || 0) / 100;
+                const input = document.querySelector(`input[data-month='${month}'][data-metric='deepening-percent'][data-team='${state.team}']`);
+                if (input) input.value = parseFloat(previousValue || 0).toFixed(1);
+                updateProductionCalculations(state.team, month);
             } else if (metric === 'additional-productivity') {
                 AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].productivity[month] = parseFloat(previousValue).toFixed(2);
                 const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-productivity'][data-team='${state.team}']`);
@@ -2237,6 +3443,15 @@ function undo() {
                 const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-abpa'][data-team='${state.team}']`);
                 if (input) input.value = String(Math.round((previousValue || 0) / 1000));
                 updateAdditionalProductCalculations(state.team, month, product);
+            } else if (metric === 'headcount-flow') {
+                const flows = AppState.teamData[AppState.currentForecast][teamKey].headcountFlows;
+                if (flows && flowKey) {
+                    if (!flows[flowKey]) flows[flowKey] = {};
+                    flows[flowKey][month] = parseFloat(previousValue) || 0;
+                }
+                const input = document.querySelector(`input[data-month='${month}'][data-flow-key='${flowKey}'][data-team='${state.team}']`);
+                if (input) input.value = parseFloat(previousValue) || 0;
+                updateHeadcountFlowDerived(state.team, month);
             }
         });
     }
@@ -2244,10 +3459,23 @@ function undo() {
     // Persist undo to DB in bulk
     try {
         const updates = [];
+        const flowUpdates = [];
         if (action.type === 'headcountChange') {
             const { team, pg, month, previousValue } = action.data;
             const { fieldName, dbValue } = getFieldAndDbValueFromState('headcount', null, pg, previousValue);
             updates.push({ teamId: parseInt(team), periodDate: getPeriodDate(month), field: fieldName, newValue: dbValue });
+        } else if (action.type === 'headcountFlowChange') {
+            const { team, flowKey, month, previousValue } = action.data;
+            const teamId = parseInt(team);
+            flowUpdates.push({
+                teamId,
+                periodDate: getPeriodDate(month),
+                field: flowKey,
+                value: Number(previousValue) || 0,
+                dataType: 'forecast',
+                versionId: AppState.currentVersion?.version_id,
+                updatedBy: AppState.currentUser
+            });
         } else if (action.type === 'productionChange') {
             const { team, month, metric, product, previousValue } = action.data;
             const { fieldName, dbValue } = getFieldAndDbValueFromState(metric, product, null, previousValue);
@@ -2259,18 +3487,42 @@ function undo() {
         } else if (action.type === 'percentageChange' || action.type === 'bulkPaste' || action.type === 'baselineApply') {
             const states = action.data || [];
             states.forEach(state => {
-                const { fieldName, dbValue } = getFieldAndDbValueFromState(state.metric, state.product, state.pg, state.previousValue);
-                updates.push({ teamId: parseInt(state.team), periodDate: getPeriodDate(state.month), field: fieldName, newValue: dbValue });
+                const { fieldName, dbValue } = getFieldAndDbValueFromState(state.metric, state.product, state.pg, state.previousValue, state.flow);
+                if (!fieldName) return;
+                if (state.metric === 'headcount-flow') {
+                    const teamId = parseInt(state.team);
+                    flowUpdates.push({
+                        teamId,
+                        periodDate: getPeriodDate(state.month),
+                        field: fieldName,
+                        value: dbValue,
+                        dataType: 'forecast',
+                        versionId: AppState.currentVersion?.version_id,
+                        updatedBy: AppState.currentUser
+                    });
+                } else {
+                    updates.push({ teamId: parseInt(state.team), periodDate: getPeriodDate(state.month), field: fieldName, newValue: dbValue });
+                }
             });
         }
+        const promises = [];
+        const showBusy = (updates.length + flowUpdates.length) > 50;
+        if (showBusy) showLoadingIndicator('Updating...');
         if (updates.length > 0) {
-            const showBusy = updates.length > 50;
-            if (showBusy) showLoadingIndicator('Updating...');
-            API.forecasts.bulkUpdate({
+            promises.push(API.forecasts.bulkUpdate({
                 updates,
                 versionId: AppState.currentVersion.version_id,
                 updatedBy: AppState.currentUser
-            }).then(() => {
+            }));
+        }
+        if (flowUpdates.length > 0) {
+            promises.push(API.headcountFlows.bulkUpdate({
+                updates: flowUpdates,
+                updatedBy: AppState.currentUser
+            }));
+        }
+        if (promises.length > 0) {
+            Promise.all(promises).then(() => {
                 if (showBusy) hideLoadingIndicator();
             }).catch(err => {
                 console.error('Failed to persist undo:', err);
@@ -2284,10 +3536,22 @@ function undo() {
     // Persist redo to DB in bulk
     try {
         const updates = [];
+        const flowUpdates = [];
         if (action.type === 'headcountChange') {
             const { team, pg, month, newValue } = action.data;
             const { fieldName, dbValue } = getFieldAndDbValueFromState('headcount', null, pg, newValue);
             updates.push({ teamId: parseInt(team), periodDate: getPeriodDate(month), field: fieldName, newValue: dbValue });
+        } else if (action.type === 'headcountFlowChange') {
+            const { team, flowKey, month, newValue } = action.data;
+            flowUpdates.push({
+                teamId: parseInt(team),
+                periodDate: getPeriodDate(month),
+                field: flowKey,
+                value: Number(newValue) || 0,
+                dataType: 'forecast',
+                versionId: AppState.currentVersion?.version_id,
+                updatedBy: AppState.currentUser
+            });
         } else if (action.type === 'productionChange') {
             const { team, month, metric, product, newValue } = action.data;
             const { fieldName, dbValue } = getFieldAndDbValueFromState(metric, product, null, newValue);
@@ -2299,18 +3563,41 @@ function undo() {
         } else if (action.type === 'percentageChange' || action.type === 'bulkPaste' || action.type === 'baselineApply') {
             const states = action.data || [];
             states.forEach(state => {
-                const { fieldName, dbValue } = getFieldAndDbValueFromState(state.metric, state.product, state.pg, state.newValue);
-                updates.push({ teamId: parseInt(state.team), periodDate: getPeriodDate(state.month), field: fieldName, newValue: dbValue });
+                const { fieldName, dbValue } = getFieldAndDbValueFromState(state.metric, state.product, state.pg, state.newValue, state.flow);
+                if (!fieldName) return;
+                if (state.metric === 'headcount-flow') {
+                    flowUpdates.push({
+                        teamId: parseInt(state.team),
+                        periodDate: getPeriodDate(state.month),
+                        field: fieldName,
+                        value: dbValue,
+                        dataType: 'forecast',
+                        versionId: AppState.currentVersion?.version_id,
+                        updatedBy: AppState.currentUser
+                    });
+                } else {
+                    updates.push({ teamId: parseInt(state.team), periodDate: getPeriodDate(state.month), field: fieldName, newValue: dbValue });
+                }
             });
         }
+        const promises = [];
+        const showBusy = (updates.length + flowUpdates.length) > 50;
+        if (showBusy) showLoadingIndicator('Updating...');
         if (updates.length > 0) {
-            const showBusy = updates.length > 50;
-            if (showBusy) showLoadingIndicator('Updating...');
-            API.forecasts.bulkUpdate({
+            promises.push(API.forecasts.bulkUpdate({
                 updates,
                 versionId: AppState.currentVersion.version_id,
                 updatedBy: AppState.currentUser
-            }).then(() => {
+            }));
+        }
+        if (flowUpdates.length > 0) {
+            promises.push(API.headcountFlows.bulkUpdate({
+                updates: flowUpdates,
+                updatedBy: AppState.currentUser
+            }));
+        }
+        if (promises.length > 0) {
+            Promise.all(promises).then(() => {
                 if (showBusy) hideLoadingIndicator();
             }).catch(err => {
                 console.error('Failed to persist redo:', err);
@@ -2398,6 +3685,44 @@ function redo() {
       requestAnimationFrame(applyCell);
     });
 
+  } else if (action.type === 'headcountFlowChange') {
+    const { team, flowKey, month, newValue } = action.data;
+    const teamKey = `Team ${team}`;
+    const flows = AppState.teamData[AppState.currentForecast][teamKey]?.headcountFlows;
+    if (flows && flows[flowKey]) {
+      flows[flowKey][month] = Number(newValue) || 0;
+    }
+    const applyFlowRedo = () => {
+      const selector = `#sales-headcount-subtab input[data-month='${month}'][data-flow-key='${flowKey}'][data-team='${team}']`;
+      const inputEl = document.querySelector(selector);
+      if (inputEl) {
+        AppState.isProgrammaticChange = true;
+        inputEl.value = Number(newValue) || 0;
+        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+        AppState.isProgrammaticChange = false;
+      } else {
+        const displayCell = document.querySelector(`td[data-flow-team='${team}'][data-flow-key='${flowKey}'][data-month='${month}']`);
+        if (displayCell) displayCell.textContent = Number(newValue) || 0;
+        updateHeadcountFlowDerived(team, month);
+      }
+    };
+    requestAnimationFrame(() => {
+      renderCurrentTab();
+      requestAnimationFrame(applyFlowRedo);
+    });
+
+    const flowTeamId = parseInt(team);
+    bulk.push({
+      teamId: flowTeamId,
+      periodDate: getPeriodDate(month),
+      field: flowKey,
+      value: Number(newValue) || 0,
+      dataType: 'forecast',
+      versionId: AppState.currentVersion?.version_id,
+      updatedBy: AppState.currentUser,
+      _flow: true
+    });
+
   } else if (action.type === 'nonSalesHeadcountChange') {
     const { groupKey, teamId, month, newValue } = action.data;
     const versionKey = AppState.currentForecast;
@@ -2459,6 +3784,15 @@ function redo() {
       if (input) input.value = formatNumber(newValue);
       const letter = product.split(' ')[1].toLowerCase();
       fieldName = `product_${letter}_abpa`;
+    } else if (metric === 'deepening-percent') {
+      if (!AppState.teamData[AppState.currentForecast][teamKey].deepening) {
+        AppState.teamData[AppState.currentForecast][teamKey].deepening = { amount: {}, percent: {} };
+      }
+      AppState.teamData[AppState.currentForecast][teamKey].deepening.percent[month] = (parseFloat(newValue) || 0) / 100;
+      const input = document.querySelector(`input[data-month='${month}'][data-metric='deepening-percent'][data-team='${team}']`);
+      if (input) input.value = parseFloat(newValue || 0).toFixed(1);
+      fieldName = 'deepening_percent';
+      dbValue = (parseFloat(newValue) || 0) / 100;
     }
 
     updateProductionCalculations(team, month);
@@ -2502,6 +3836,7 @@ function redo() {
       const metric = state.metric;
       const product = state.product;
       const pg = state.pg;
+      const flowKey = state.flow;
       const val = state.newValue;
 
       if (metric === 'headcount') {
@@ -2525,6 +3860,14 @@ function redo() {
         const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='abpa'][data-team='${state.team}']`);
         if (input) input.value = String(Math.round((val || 0) / 1000));
         updateProductionCalculations(state.team, month);
+      } else if (metric === 'deepening-percent' || metric === 'deepening_percent') {
+        if (!AppState.teamData[AppState.currentForecast][teamKey].deepening) {
+          AppState.teamData[AppState.currentForecast][teamKey].deepening = { amount: {}, percent: {} };
+        }
+        AppState.teamData[AppState.currentForecast][teamKey].deepening.percent[month] = (parseFloat(val) || 0) / 100;
+        const input = document.querySelector(`input[data-month='${month}'][data-metric='deepening-percent'][data-team='${state.team}']`);
+        if (input) input.value = parseFloat(val || 0).toFixed(1);
+        updateProductionCalculations(state.team, month);
       } else if (metric === 'additional-productivity') {
         AppState.teamData[AppState.currentForecast][teamKey].additionalProducts[product].productivity[month] = parseFloat(val).toFixed(2);
         const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-productivity'][data-team='${state.team}']`);
@@ -2535,23 +3878,48 @@ function redo() {
         const input = document.querySelector(`input[data-month='${month}'][data-product='${product}'][data-metric='additional-abpa'][data-team='${state.team}']`);
         if (input) input.value = String(Math.round((val || 0) / 1000));
         updateAdditionalProductCalculations(state.team, month, product);
+      } else if (metric === 'headcount-flow') {
+        const flows = AppState.teamData[AppState.currentForecast][teamKey].headcountFlows;
+        if (flows && flowKey) {
+          if (!flows[flowKey]) flows[flowKey] = {};
+          flows[flowKey][month] = parseFloat(val) || 0;
+        }
+        const input = document.querySelector(`input[data-month='${month}'][data-flow-key='${flowKey}'][data-team='${state.team}']`);
+        if (input) input.value = parseFloat(val) || 0;
+        updateHeadcountFlowDerived(state.team, month);
       }
 
       // Build bulk persist field names/values
-      const { fieldName, dbValue } = getFieldAndDbValueFromState(metric, product, pg, val);
-      bulk.push({
-        teamId: parseInt(state.team),
-        periodDate: getPeriodDate(month),
-        field: fieldName,
-        newValue: dbValue
-      });
+      const { fieldName, dbValue } = getFieldAndDbValueFromState(metric, product, pg, val, flowKey);
+      if (!fieldName) return;
+      const teamId = parseInt(state.team);
+      if (metric === 'headcount-flow') {
+        bulk.push({
+          teamId,
+          periodDate: getPeriodDate(month),
+          field: fieldName,
+          value: dbValue,
+          dataType: 'forecast',
+          versionId: AppState.currentVersion?.version_id,
+          updatedBy: AppState.currentUser,
+          _flow: true
+        });
+      } else {
+        bulk.push({
+          teamId,
+          periodDate: getPeriodDate(month),
+          field: fieldName,
+          newValue: dbValue
+        });
+      }
     });
   }
 
   // Persist (split non-sales rows if present)
   if (bulk.length > 0) {
     const nsRows = bulk.filter(u => u._ns);
-    const fcRows = bulk.filter(u => !u._ns).map(({ _ns, ...r }) => r);
+    const flowRows = bulk.filter(u => u._flow);
+    const fcRows = bulk.filter(u => !u._ns && !u._flow).map(({ _ns, _flow, ...r }) => r);
 
     const showBusy = bulk.length > 50;
     if (showBusy) showLoadingIndicator('Updating...');
@@ -2573,6 +3941,13 @@ function redo() {
         value: u.value ?? u.newValue ?? 0,
         updatedBy: AppState.currentUser
       }))));
+    }
+    if (flowRows.length) {
+      const flowPayload = flowRows.map(({ _flow, ...r }) => r);
+      promises.push(API.headcountFlows.bulkUpdate({
+        updates: flowPayload,
+        updatedBy: AppState.currentUser
+      }));
     }
 
     Promise.all(promises).then(() => {
@@ -2760,7 +4135,7 @@ function validateAllProductMix() {
 
 // Scroll to Jan-24 column in current tab's table
 function scrollToJan2024() {
-    const wrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+    const wrapper = getActiveWrapper();
     if (!wrapper) return;
 
     const table = wrapper.querySelector('table');
@@ -2783,7 +4158,7 @@ function scrollToJan2024() {
         const elementLeft = targetElement.offsetLeft;
         const scrollLeft = Math.max(0, elementLeft - firstColumnWidth - 116);
         wrapper.scrollLeft = scrollLeft;
-        AppState.scrollPositions[AppState.currentTab] = scrollLeft;
+        AppState.scrollPositions[getScrollKeyForState()] = scrollLeft;
     }
 }
 
@@ -2917,7 +4292,7 @@ function updateProductionToolbarCaption(mode = AppState.productionSubtab) {
     const caption = document.querySelector('.production-toolbar-caption');
     if (!caption) return;
     const note = 'Prefill forecast months using trailing averages, seasonality multipliers, and annual growth. Edits made in the table still apply month by month.';
-    const shouldShow = mode === 'investments' && !AppState.isGroupView;
+    const shouldShow = !AppState.isGroupView && (mode === 'investments' || mode === 'banking');
     if (shouldShow) {
         caption.textContent = note;
         caption.classList.add('baseline-note--active');
@@ -2930,9 +4305,10 @@ function updateProductionToolbarCaption(mode = AppState.productionSubtab) {
 function switchProductionSubtab(which) {
     if (which !== 'investments' && which !== 'banking') return;
     // Save current before switching
+    const previousKey = getScrollKeyForState('production');
     const currentWrapper = getActiveWrapper();
     if (currentWrapper) {
-        AppState.scrollPositions[getScrollKeyForState('production')] = currentWrapper.scrollLeft;
+        AppState.scrollPositions[previousKey] = currentWrapper.scrollLeft;
     }
     AppState.productionSubtab = which;
     const invBtn = document.getElementById('prod-subtab-investments');

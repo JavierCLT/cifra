@@ -116,6 +116,40 @@ INSERT INTO `forecast_data` VALUES (1152,22,'2024-01-01',1,33,33,31,30,25,27,29,
 /*!40000 ALTER TABLE `forecast_data` ENABLE KEYS */;
 UNLOCK TABLES;
 
+ALTER TABLE `forecast_data`
+    ADD COLUMN `ref_out_fsa_mlwm_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_out_mfsa_hl_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_out_mfsa_sb_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_out_fsa_bsa_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_out_fsa_cvl_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_out_fsa_hl_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_out_fsa_sb_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_in_merrill_ci_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_in_privatebank_ci_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_in_centralized_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_in_hl_ci_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_in_csa_ci_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_in_preferred_ci_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `ref_in_bsa_ci_prod` decimal(5,2) DEFAULT '0.00',
+    ADD COLUMN `deepening_percent` decimal(6,4) DEFAULT '0.0000';
+
+UPDATE `forecast_data`
+SET
+    `ref_out_fsa_mlwm_prod` = ROUND(GREATEST(0.35, (`productivity` * 0.22) + ((`team_id` % 5) * 0.03) + ((MONTH(`period_date`) % 3) * 0.02)), 2),
+    `ref_out_mfsa_hl_prod` = ROUND(GREATEST(0.30, (`productivity` * 0.18) + ((`team_id` % 4) * 0.02) + ((MONTH(`period_date`) % 5) * 0.02)), 2),
+    `ref_out_mfsa_sb_prod` = ROUND(GREATEST(0.28, (`productivity` * 0.17) + ((`team_id` % 6) * 0.02) + ((MONTH(`period_date`) % 4) * 0.01)), 2),
+    `ref_out_fsa_bsa_prod` = ROUND(GREATEST(0.32, (`productivity` * 0.20) + ((`team_id` % 3) * 0.03) + ((MONTH(`period_date`) % 6) * 0.01)), 2),
+    `ref_out_fsa_cvl_prod` = ROUND(GREATEST(0.27, (`productivity` * 0.16) + ((`team_id` % 7) * 0.02) + ((MONTH(`period_date`) % 4) * 0.02)), 2),
+    `ref_out_fsa_hl_prod` = ROUND(GREATEST(0.31, (`productivity` * 0.19) + ((`team_id` % 5) * 0.02) + ((MONTH(`period_date`) % 7) * 0.015)), 2),
+    `ref_out_fsa_sb_prod` = ROUND(GREATEST(0.29, (`productivity` * 0.18) + ((`team_id` % 4) * 0.025) + ((MONTH(`period_date`) % 6) * 0.015)), 2),
+    `ref_in_merrill_ci_prod` = ROUND(GREATEST(0.22, (`productivity` * 0.15) + ((MONTH(`period_date`) % 4) * 0.015)), 2),
+    `ref_in_privatebank_ci_prod` = ROUND(GREATEST(0.20, (`productivity` * 0.14) + ((`team_id` % 3) * 0.02)), 2),
+    `ref_in_centralized_prod` = ROUND(GREATEST(0.24, (`productivity` * 0.16) + ((MONTH(`period_date`) % 5) * 0.01)), 2),
+    `ref_in_hl_ci_prod` = ROUND(GREATEST(0.18, (`productivity` * 0.13) + ((`team_id` % 6) * 0.015)), 2),
+    `ref_in_csa_ci_prod` = ROUND(GREATEST(0.19, (`productivity` * 0.12) + ((MONTH(`period_date`) % 6) * 0.012)), 2),
+    `ref_in_preferred_ci_prod` = ROUND(GREATEST(0.21, (`productivity` * 0.14) + ((`team_id` % 5) * 0.015)), 2),
+    `ref_in_bsa_ci_prod` = ROUND(GREATEST(0.17, (`productivity` * 0.11) + ((MONTH(`period_date`) % 7) * 0.01)), 2);
+
 --
 -- Table structure for table `forecast_locks`
 --
@@ -179,6 +213,28 @@ LOCK TABLES `forecast_notes` WRITE;
 /*!40000 ALTER TABLE `forecast_notes` DISABLE KEYS */;
 /*!40000 ALTER TABLE `forecast_notes` ENABLE KEYS */;
 UNLOCK TABLES;
+
+--
+-- Table structure for table `referral_settings`
+--
+
+DROP TABLE IF EXISTS `referral_settings`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `referral_settings` (
+  `config_id` int NOT NULL AUTO_INCREMENT,
+  `version_id` int NOT NULL,
+  `total_to_quality_ratios` longtext,
+  `wins_to_quality_ratios` longtext,
+  `productivity_growth_rate` decimal(7,4) DEFAULT '0.0100',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `updated_by` varchar(100) DEFAULT NULL,
+  PRIMARY KEY (`config_id`),
+  UNIQUE KEY `uniq_referral_settings_version` (`version_id`),
+  CONSTRAINT `referral_settings_version_fk` FOREIGN KEY (`version_id`) REFERENCES `forecast_versions` (`version_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 
 --
 -- Table structure for table `forecast_permissions`
@@ -674,17 +730,31 @@ SET @saved_cs_client     = @@character_set_client;
  1 AS `product_cc_productivity`,
  1 AS `product_dd_productivity`,
  1 AS `product_ee_productivity`,
- 1 AS `product_ff_productivity`,
- 1 AS `product_gg_productivity`,
- 1 AS `product_hh_productivity`,
- 1 AS `product_aa_abpa`,
- 1 AS `product_bb_abpa`,
- 1 AS `product_cc_abpa`,
- 1 AS `product_dd_abpa`,
- 1 AS `product_ee_abpa`,
- 1 AS `product_ff_abpa`,
- 1 AS `product_gg_abpa`,
- 1 AS `product_hh_abpa`,
+  1 AS `product_ff_productivity`,
+  1 AS `product_gg_productivity`,
+  1 AS `product_hh_productivity`,
+  1 AS `product_aa_abpa`,
+  1 AS `product_bb_abpa`,
+  1 AS `product_cc_abpa`,
+  1 AS `product_dd_abpa`,
+  1 AS `product_ee_abpa`,
+  1 AS `product_ff_abpa`,
+  1 AS `product_gg_abpa`,
+  1 AS `product_hh_abpa`,
+  1 AS `ref_out_fsa_mlwm_prod`,
+  1 AS `ref_out_mfsa_hl_prod`,
+  1 AS `ref_out_mfsa_sb_prod`,
+  1 AS `ref_out_fsa_bsa_prod`,
+  1 AS `ref_out_fsa_cvl_prod`,
+  1 AS `ref_out_fsa_hl_prod`,
+  1 AS `ref_out_fsa_sb_prod`,
+  1 AS `ref_in_merrill_ci_prod`,
+  1 AS `ref_in_privatebank_ci_prod`,
+  1 AS `ref_in_centralized_prod`,
+  1 AS `ref_in_hl_ci_prod`,
+  1 AS `ref_in_csa_ci_prod`,
+  1 AS `ref_in_preferred_ci_prod`,
+  1 AS `ref_in_bsa_ci_prod`,
  1 AS `created_at`,
  1 AS `updated_at`,
  1 AS `updated_by`,
@@ -873,6 +943,7 @@ BEGIN
             productivity,
             product_a_mix, product_b_mix, product_c_mix, product_d_mix,
             product_a_abpa, product_b_abpa, product_c_abpa, product_d_abpa,
+            deepening_percent,
             created_by
         )
         SELECT 
@@ -882,6 +953,7 @@ BEGIN
             productivity,
             product_a_mix, product_b_mix, product_c_mix, product_d_mix,
             product_a_abpa, product_b_abpa, product_c_abpa, product_d_abpa,
+            deepening_percent,
             p_created_by
         FROM forecast_data
         WHERE version_id = p_source_version_id
@@ -1105,7 +1177,7 @@ DELIMITER ;
 /*!50001 SET collation_connection      = utf8mb4_0900_ai_ci */;
 /*!50001 CREATE ALGORITHM=UNDEFINED */
 /*!50013 DEFINER=`root`@`localhost` SQL SECURITY DEFINER */
-/*!50001 VIEW `v_forecast_metrics` AS select `fd`.`forecast_id` AS `forecast_id`,`fd`.`team_id` AS `team_id`,`fd`.`period_date` AS `period_date`,`fd`.`version_id` AS `version_id`,`fd`.`pg1_headcount` AS `pg1_headcount`,`fd`.`pg2_headcount` AS `pg2_headcount`,`fd`.`pg3_headcount` AS `pg3_headcount`,`fd`.`pg4_headcount` AS `pg4_headcount`,`fd`.`pg5_headcount` AS `pg5_headcount`,`fd`.`pg6_headcount` AS `pg6_headcount`,`fd`.`pg7_headcount` AS `pg7_headcount`,`fd`.`productivity` AS `productivity`,`fd`.`product_a_mix` AS `product_a_mix`,`fd`.`product_b_mix` AS `product_b_mix`,`fd`.`product_c_mix` AS `product_c_mix`,`fd`.`product_d_mix` AS `product_d_mix`,`fd`.`product_a_abpa` AS `product_a_abpa`,`fd`.`product_b_abpa` AS `product_b_abpa`,`fd`.`product_c_abpa` AS `product_c_abpa`,`fd`.`product_d_abpa` AS `product_d_abpa`,`fd`.`product_aa_productivity` AS `product_aa_productivity`,`fd`.`product_bb_productivity` AS `product_bb_productivity`,`fd`.`product_cc_productivity` AS `product_cc_productivity`,`fd`.`product_dd_productivity` AS `product_dd_productivity`,`fd`.`product_ee_productivity` AS `product_ee_productivity`,`fd`.`product_ff_productivity` AS `product_ff_productivity`,`fd`.`product_gg_productivity` AS `product_gg_productivity`,`fd`.`product_hh_productivity` AS `product_hh_productivity`,`fd`.`product_aa_abpa` AS `product_aa_abpa`,`fd`.`product_bb_abpa` AS `product_bb_abpa`,`fd`.`product_cc_abpa` AS `product_cc_abpa`,`fd`.`product_dd_abpa` AS `product_dd_abpa`,`fd`.`product_ee_abpa` AS `product_ee_abpa`,`fd`.`product_ff_abpa` AS `product_ff_abpa`,`fd`.`product_gg_abpa` AS `product_gg_abpa`,`fd`.`product_hh_abpa` AS `product_hh_abpa`,`fd`.`created_at` AS `created_at`,`fd`.`updated_at` AS `updated_at`,`fd`.`updated_by` AS `updated_by`,`fv`.`version_name` AS `version_name`,`fv`.`forecast_start_date` AS `forecast_start_date`,`fv`.`is_locked` AS `version_locked`,date_format(`fd`.`period_date`,'%b-%y') AS `period_string`,year(`fd`.`period_date`) AS `year`,month(`fd`.`period_date`) AS `month`,quarter(`fd`.`period_date`) AS `quarter` from (`forecast_data` `fd` join `forecast_versions` `fv` on((`fd`.`version_id` = `fv`.`version_id`))) */;
+/*!50001 VIEW `v_forecast_metrics` AS select `fd`.`forecast_id` AS `forecast_id`,`fd`.`team_id` AS `team_id`,`fd`.`period_date` AS `period_date`,`fd`.`version_id` AS `version_id`,`fd`.`pg1_headcount` AS `pg1_headcount`,`fd`.`pg2_headcount` AS `pg2_headcount`,`fd`.`pg3_headcount` AS `pg3_headcount`,`fd`.`pg4_headcount` AS `pg4_headcount`,`fd`.`pg5_headcount` AS `pg5_headcount`,`fd`.`pg6_headcount` AS `pg6_headcount`,`fd`.`pg7_headcount` AS `pg7_headcount`,`fd`.`productivity` AS `productivity`,`fd`.`product_a_mix` AS `product_a_mix`,`fd`.`product_b_mix` AS `product_b_mix`,`fd`.`product_c_mix` AS `product_c_mix`,`fd`.`product_d_mix` AS `product_d_mix`,`fd`.`product_a_abpa` AS `product_a_abpa`,`fd`.`product_b_abpa` AS `product_b_abpa`,`fd`.`product_c_abpa` AS `product_c_abpa`,`fd`.`product_d_abpa` AS `product_d_abpa`,`fd`.`deepening_percent` AS `deepening_percent`,`fd`.`product_aa_productivity` AS `product_aa_productivity`,`fd`.`product_bb_productivity` AS `product_bb_productivity`,`fd`.`product_cc_productivity` AS `product_cc_productivity`,`fd`.`product_dd_productivity` AS `product_dd_productivity`,`fd`.`product_ee_productivity` AS `product_ee_productivity`,`fd`.`product_ff_productivity` AS `product_ff_productivity`,`fd`.`product_gg_productivity` AS `product_gg_productivity`,`fd`.`product_hh_productivity` AS `product_hh_productivity`,`fd`.`product_aa_abpa` AS `product_aa_abpa`,`fd`.`product_bb_abpa` AS `product_bb_abpa`,`fd`.`product_cc_abpa` AS `product_cc_abpa`,`fd`.`product_dd_abpa` AS `product_dd_abpa`,`fd`.`product_ee_abpa` AS `product_ee_abpa`,`fd`.`product_ff_abpa` AS `product_ff_abpa`,`fd`.`product_gg_abpa` AS `product_gg_abpa`,`fd`.`product_hh_abpa` AS `product_hh_abpa`,`fd`.`ref_out_fsa_mlwm_prod` AS `ref_out_fsa_mlwm_prod`,`fd`.`ref_out_mfsa_hl_prod` AS `ref_out_mfsa_hl_prod`,`fd`.`ref_out_mfsa_sb_prod` AS `ref_out_mfsa_sb_prod`,`fd`.`ref_out_fsa_bsa_prod` AS `ref_out_fsa_bsa_prod`,`fd`.`ref_out_fsa_cvl_prod` AS `ref_out_fsa_cvl_prod`,`fd`.`ref_out_fsa_hl_prod` AS `ref_out_fsa_hl_prod`,`fd`.`ref_out_fsa_sb_prod` AS `ref_out_fsa_sb_prod`,`fd`.`ref_in_merrill_ci_prod` AS `ref_in_merrill_ci_prod`,`fd`.`ref_in_privatebank_ci_prod` AS `ref_in_privatebank_ci_prod`,`fd`.`ref_in_centralized_prod` AS `ref_in_centralized_prod`,`fd`.`ref_in_hl_ci_prod` AS `ref_in_hl_ci_prod`,`fd`.`ref_in_csa_ci_prod` AS `ref_in_csa_ci_prod`,`fd`.`ref_in_preferred_ci_prod` AS `ref_in_preferred_ci_prod`,`fd`.`ref_in_bsa_ci_prod` AS `ref_in_bsa_ci_prod`,`fd`.`created_at` AS `created_at`,`fd`.`updated_at` AS `updated_at`,`fd`.`updated_by` AS `updated_by`,`fv`.`version_name` AS `version_name`,`fv`.`forecast_start_date` AS `forecast_start_date`,`fv`.`is_locked` AS `version_locked`,date_format(`fd`.`period_date`,'%b-%y') AS `period_string`,year(`fd`.`period_date`) AS `year`,month(`fd`.`period_date`) AS `month`,quarter(`fd`.`period_date`) AS `quarter` from (`forecast_data` `fd` join `forecast_versions` `fv` on((`fd`.`version_id` = `fv`.`version_id`))) */;
 /*!50001 SET character_set_client      = @saved_cs_client */;
 /*!50001 SET character_set_results     = @saved_cs_results */;
 /*!50001 SET collation_connection      = @saved_col_connection */;

@@ -3,6 +3,79 @@ const express = require('express');
 const router = express.Router();
 const logger = require('../utils/logger');
 const { validate } = require('../utils/validators');
+const {
+    normalizeEmail,
+    userHasAdminAccess,
+    rejectIfVersionLocked
+} = require('../utils/forecast-guards');
+
+const SAVE_AND_LOCK_CONFIRMATION = 'SAVE AND LOCK FORECAST';
+
+function buildCycleName(baseName) {
+    const text = String(baseName || '').trim();
+    const cycleMatch = text.match(/^(\d{1,2})\+(\d{1,2})$/);
+    if (cycleMatch) {
+        return '0+12';
+    }
+    return `0+12`;
+}
+
+async function resolveUniqueVersionName(connection, desiredName) {
+    const base = String(desiredName || '').trim();
+    let attempt = base;
+    let suffix = 2;
+
+    while (true) {
+        const [rows] = await connection.query(
+            'SELECT version_id FROM forecast_versions WHERE version_name = ? LIMIT 1',
+            [attempt]
+        );
+        if (!rows.length) {
+            return attempt;
+        }
+        attempt = `${base} (${suffix})`;
+        suffix += 1;
+    }
+}
+
+async function getTableColumns(connection, tableName) {
+    const [rows] = await connection.query(
+        `SELECT column_name, extra
+         FROM information_schema.columns
+         WHERE table_schema = DATABASE()
+           AND table_name = ?
+         ORDER BY ordinal_position`,
+        [tableName]
+    );
+    return rows || [];
+}
+
+async function cloneVersionedTable(connection, tableName, sourceVersionId, newVersionId, whereClause = 'version_id = ?') {
+    const columns = await getTableColumns(connection, tableName);
+    if (!columns.length) {
+        return 0;
+    }
+
+    const insertColumns = columns
+        .filter(col => !String(col.extra || '').toLowerCase().includes('auto_increment'))
+        .map(col => col.column_name);
+
+    if (!insertColumns.includes('version_id')) {
+        return 0;
+    }
+
+    const selectColumns = insertColumns.map(column => (column === 'version_id' ? '? AS version_id' : column));
+
+    const sql = `
+        INSERT INTO ${tableName} (${insertColumns.join(', ')})
+        SELECT ${selectColumns.join(', ')}
+        FROM ${tableName}
+        WHERE ${whereClause}
+    `;
+
+    const [result] = await connection.query(sql, [newVersionId, sourceVersionId]);
+    return result.affectedRows || 0;
+}
 
 // Get all forecast versions
 router.get('/versions', async (req, res) => {
@@ -45,6 +118,209 @@ router.get('/versions/:versionId', async (req, res) => {
     } catch (error) {
         logger.error('Error fetching forecast version:', error);
         res.status(500).json({ error: 'Failed to fetch forecast version' });
+    }
+});
+
+router.get('/admin-access/:userEmail', async (req, res) => {
+    try {
+        const forecastPool = req.app.locals.forecastPool;
+        const { userEmail } = req.params;
+        const isAdmin = await userHasAdminAccess(forecastPool, userEmail);
+        res.json({ success: true, data: { isAdmin } });
+    } catch (error) {
+        logger.error('Error checking forecast admin access:', error);
+        res.status(500).json({ error: 'Failed to check admin access' });
+    }
+});
+
+router.post('/cycle/save-lock-and-clone', async (req, res) => {
+    const forecastPool = req.app.locals.forecastPool;
+    const connection = await forecastPool.getConnection();
+
+    try {
+        const {
+            sourceVersionId,
+            nextVersionName,
+            confirmationText,
+            userEmail
+        } = req.body || {};
+
+        const normalizedUser = normalizeEmail(userEmail);
+        const numericSourceVersionId = Number(sourceVersionId);
+        const requestedNextName = String(nextVersionName || '').trim();
+
+        if (!Number.isFinite(numericSourceVersionId) || numericSourceVersionId <= 0) {
+            return res.status(400).json({ error: 'sourceVersionId is required' });
+        }
+        if (confirmationText !== SAVE_AND_LOCK_CONFIRMATION) {
+            return res.status(400).json({ error: `confirmationText must be exactly "${SAVE_AND_LOCK_CONFIRMATION}"` });
+        }
+        if (!normalizedUser) {
+            return res.status(400).json({ error: 'userEmail is required' });
+        }
+
+        const isAdmin = await userHasAdminAccess(forecastPool, normalizedUser);
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Only admins can save, lock, and clone forecast cycles' });
+        }
+
+        await connection.beginTransaction();
+
+        const [sourceRows] = await connection.query(
+            `SELECT version_id, version_name, forecast_start_date, description, is_locked
+             FROM forecast_versions
+             WHERE version_id = ?
+             FOR UPDATE`,
+            [numericSourceVersionId]
+        );
+
+        if (!sourceRows.length) {
+            await connection.rollback();
+            return res.status(404).json({ error: 'Source forecast version not found' });
+        }
+
+        const source = sourceRows[0];
+        if (source.is_locked) {
+            await connection.rollback();
+            return res.status(409).json({ error: 'Source forecast is already locked' });
+        }
+
+        const previousNameBase = source.version_name.startsWith('Previous ')
+            ? source.version_name
+            : `Previous ${source.version_name}`;
+        const lockedVersionName = await resolveUniqueVersionName(connection, previousNameBase);
+        const candidateNextName = requestedNextName || buildCycleName(source.version_name);
+        const [nextNameExists] = await connection.query(
+            'SELECT version_id FROM forecast_versions WHERE version_name = ? LIMIT 1',
+            [candidateNextName]
+        );
+
+        if (nextNameExists.length > 0) {
+            await connection.rollback();
+            return res.status(409).json({ error: `Version name "${candidateNextName}" already exists` });
+        }
+
+        await connection.query(
+            `UPDATE forecast_versions
+             SET version_name = ?, is_locked = 1, updated_at = NOW(), created_by = COALESCE(created_by, ?)
+             WHERE version_id = ?`,
+            [lockedVersionName, normalizedUser, numericSourceVersionId]
+        );
+
+        await connection.query(
+            `INSERT INTO forecast_locks (version_id, locked_by, lock_reason)
+             VALUES (?, ?, ?)`,
+            [
+                numericSourceVersionId,
+                normalizedUser,
+                'Cycle finalized using SAVE AND LOCK FORECAST'
+            ]
+        );
+
+        const [insertVersionResult] = await connection.query(
+            `INSERT INTO forecast_versions
+             (version_name, forecast_start_date, description, is_active, is_locked, created_by)
+             VALUES (?, ?, ?, 1, 0, ?)`,
+            [
+                candidateNextName,
+                source.forecast_start_date,
+                `Baseline cloned from ${source.version_name}`,
+                normalizedUser
+            ]
+        );
+
+        const newVersionId = insertVersionResult.insertId;
+        const cloneCounts = {};
+
+        cloneCounts.forecast_data = await cloneVersionedTable(
+            connection,
+            'forecast_data',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.forecast_non_sales_headcount = await cloneVersionedTable(
+            connection,
+            'forecast_non_sales_headcount',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.production_settings = await cloneVersionedTable(
+            connection,
+            'production_settings',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.referral_settings = await cloneVersionedTable(
+            connection,
+            'referral_settings',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.incentive_compensable_metrics = await cloneVersionedTable(
+            connection,
+            'incentive_compensable_metrics',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.incentive_quality_ratios = await cloneVersionedTable(
+            connection,
+            'incentive_quality_ratios',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.incentive_percent_targets = await cloneVersionedTable(
+            connection,
+            'incentive_percent_targets',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.incentive_expense_grids = await cloneVersionedTable(
+            connection,
+            'incentive_expense_grids',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.incentive_calculations = await cloneVersionedTable(
+            connection,
+            'incentive_calculations',
+            numericSourceVersionId,
+            newVersionId
+        );
+
+        cloneCounts.headcount_flows = await cloneVersionedTable(
+            connection,
+            'headcount_flows',
+            numericSourceVersionId,
+            newVersionId,
+            `version_id = ? AND data_type = 'forecast'`
+        );
+
+        await connection.commit();
+
+        res.status(201).json({
+            success: true,
+            data: {
+                lockedVersionId: numericSourceVersionId,
+                lockedVersionName,
+                newVersionId,
+                newVersionName: candidateNextName,
+                cloneCounts
+            }
+        });
+    } catch (error) {
+        await connection.rollback();
+        logger.error('Error while saving/locking/cloning forecast cycle:', error);
+        res.status(500).json({ error: 'Failed to save, lock, and clone forecast cycle' });
+    } finally {
+        connection.release();
     }
 });
 
@@ -113,6 +389,10 @@ router.put('/data', async (req, res) => {
     
     try {
         const { teamId, periodDate, versionId, field, value, updatedBy } = req.body;
+
+        if (await rejectIfVersionLocked({ poolOrConnection: connection, res, versionId })) {
+            return;
+        }
         
         // SKIP ALL PERMISSION CHECKS FOR LOCAL DEVELOPMENT
         logger.info(`Updating ${field} for team ${teamId}, period ${periodDate} by ${updatedBy}`);
@@ -132,7 +412,14 @@ router.put('/data', async (req, res) => {
             'product_ee_productivity','product_ee_abpa',
             'product_ff_productivity','product_ff_abpa',
             'product_gg_productivity','product_gg_abpa',
-            'product_hh_productivity','product_hh_abpa'
+            'product_hh_productivity','product_hh_abpa',
+            'ref_out_fsa_mlwm_prod','ref_out_mfsa_hl_prod','ref_out_mfsa_sb_prod',
+            'ref_out_fsa_bsa_prod','ref_out_fsa_cvl_prod','ref_out_fsa_hl_prod',
+            'ref_out_fsa_sb_prod',
+            'ref_in_merrill_ci_prod','ref_in_privatebank_ci_prod','ref_in_centralized_prod',
+            'ref_in_hl_ci_prod','ref_in_csa_ci_prod','ref_in_preferred_ci_prod',
+            'ref_in_bsa_ci_prod',
+            'deepening_percent'
         ];
         
         if (!allowedFields.includes(field)) {
@@ -218,6 +505,10 @@ router.put('/data/bulk', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Invalid bulk payload' });
         }
 
+        if (await rejectIfVersionLocked({ poolOrConnection: connection, res, versionId })) {
+            return;
+        }
+
         const allowedFields = [
             'pg1_headcount', 'pg2_headcount', 'pg3_headcount', 'pg4_headcount',
             'pg5_headcount', 'pg6_headcount', 'pg7_headcount',
@@ -232,7 +523,14 @@ router.put('/data/bulk', async (req, res) => {
             'product_ee_productivity','product_ee_abpa',
             'product_ff_productivity','product_ff_abpa',
             'product_gg_productivity','product_gg_abpa',
-            'product_hh_productivity','product_hh_abpa'
+            'product_hh_productivity','product_hh_abpa',
+            'ref_out_fsa_mlwm_prod','ref_out_mfsa_hl_prod','ref_out_mfsa_sb_prod',
+            'ref_out_fsa_bsa_prod','ref_out_fsa_cvl_prod','ref_out_fsa_hl_prod',
+            'ref_out_fsa_sb_prod',
+            'ref_in_merrill_ci_prod','ref_in_privatebank_ci_prod','ref_in_centralized_prod',
+            'ref_in_hl_ci_prod','ref_in_csa_ci_prod','ref_in_preferred_ci_prod',
+            'ref_in_bsa_ci_prod',
+            'deepening_percent'
         ];
 
         await connection.beginTransaction();

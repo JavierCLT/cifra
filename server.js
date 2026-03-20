@@ -11,6 +11,7 @@ const path = require('path');
 // Import configuration and utilities
 const config = require('./config/database');
 const logger = require('./utils/logger');
+const { rejectIfVersionLocked } = require('./utils/forecast-guards');
 
 // Import routes
 const teamsRoutes = require('./routes/teams');
@@ -19,6 +20,7 @@ const actualsRoutes = require('./routes/actuals');
 const incentivesRoutes = require('./routes/incentives');
 const nonSalesRoutes = require('./routes/nonSales');
 const productionConfigRoutes = require('./routes/productionConfig');
+const referralConfigRoutes = require('./routes/referralConfig');
 
 // Create Express app
 const app = express();
@@ -113,6 +115,7 @@ app.use('/api/actuals', actualsRoutes);
 app.use('/api/incentives', incentivesRoutes);
 app.use('/api/non-sales', nonSalesRoutes);
 app.use('/api/production-config', productionConfigRoutes);
+app.use('/api/referral-config', referralConfigRoutes);
 
 // Combined data endpoint
 app.get('/api/team-data/:teamId/:versionId', async (req, res) => {
@@ -142,12 +145,33 @@ app.get('/api/team-data/:teamId/:versionId', async (req, res) => {
         };
         
         // Get actuals data (before forecast start date)
+        const deepeningRatioExpr = `0.10 + (MOD(ABS(CONV(SUBSTRING(MD5(CONCAT(a.team_id, '-', DATE_FORMAT(a.period_date,'%Y-%m-%d'), '-deep')),1,8),16,10)),1501)/10000)`;
+        const totalBalanceExpr = `
+            (
+                (
+                    (a.pg1_headcount + a.pg2_headcount + a.pg3_headcount + a.pg4_headcount + a.pg5_headcount + a.pg6_headcount + a.pg7_headcount)
+                    * a.productivity
+                    * a.business_days
+                ) / 5
+            ) * (
+                (a.product_a_mix * a.product_a_abpa) +
+                (a.product_b_mix * a.product_b_abpa) +
+                (a.product_c_mix * a.product_c_abpa) +
+                (a.product_d_mix * a.product_d_abpa)
+            )
+        `;
+
         const [actualsData] = await actualsPool.query(
-            `SELECT * FROM v_actuals_for_api 
-             WHERE team_id = ? 
-             AND period_date >= ? 
-             AND period_date < ?
-             ORDER BY period_date`,
+            `SELECT 
+                a.*,
+                ${totalBalanceExpr} AS total_balance_calc,
+                ${deepeningRatioExpr} AS deepening_percent,
+                (${totalBalanceExpr}) * ${deepeningRatioExpr} AS deepening_amount
+             FROM v_actuals_for_api a
+             WHERE a.team_id = ? 
+             AND a.period_date >= ? 
+             AND a.period_date < ?
+             ORDER BY a.period_date`,
             [teamId, dateRange.start, forecastStartDate]
         );
         
@@ -351,7 +375,35 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
                 AVG(product_a_abpa) as product_a_abpa,
                 AVG(product_b_abpa) as product_b_abpa,
                 AVG(product_c_abpa) as product_c_abpa,
-                AVG(product_d_abpa) as product_d_abpa
+                AVG(product_d_abpa) as product_d_abpa,
+                SUM(ref_out_fsa_mlwm_quality) as ref_out_fsa_mlwm_quality,
+                SUM(ref_out_fsa_mlwm_total) as ref_out_fsa_mlwm_total,
+                SUM(ref_out_fsa_mlwm_won) as ref_out_fsa_mlwm_won,
+                SUM(ref_out_mfsa_hl_quality) as ref_out_mfsa_hl_quality,
+                SUM(ref_out_mfsa_hl_total) as ref_out_mfsa_hl_total,
+                SUM(ref_out_mfsa_hl_won) as ref_out_mfsa_hl_won,
+                SUM(ref_out_mfsa_sb_quality) as ref_out_mfsa_sb_quality,
+                SUM(ref_out_mfsa_sb_total) as ref_out_mfsa_sb_total,
+                SUM(ref_out_mfsa_sb_won) as ref_out_mfsa_sb_won,
+                SUM(ref_out_fsa_bsa_quality) as ref_out_fsa_bsa_quality,
+                SUM(ref_out_fsa_bsa_total) as ref_out_fsa_bsa_total,
+                SUM(ref_out_fsa_bsa_won) as ref_out_fsa_bsa_won,
+                SUM(ref_out_fsa_cvl_quality) as ref_out_fsa_cvl_quality,
+                SUM(ref_out_fsa_cvl_total) as ref_out_fsa_cvl_total,
+                SUM(ref_out_fsa_cvl_won) as ref_out_fsa_cvl_won,
+                SUM(ref_out_fsa_hl_quality) as ref_out_fsa_hl_quality,
+                SUM(ref_out_fsa_hl_total) as ref_out_fsa_hl_total,
+                SUM(ref_out_fsa_hl_won) as ref_out_fsa_hl_won,
+                SUM(ref_out_fsa_sb_quality) as ref_out_fsa_sb_quality,
+                SUM(ref_out_fsa_sb_total) as ref_out_fsa_sb_total,
+                SUM(ref_out_fsa_sb_won) as ref_out_fsa_sb_won,
+                SUM(ref_in_merrill_ci_quality) as ref_in_merrill_ci_quality,
+                SUM(ref_in_privatebank_ci_quality) as ref_in_privatebank_ci_quality,
+                SUM(ref_in_centralized_quality) as ref_in_centralized_quality,
+                SUM(ref_in_hl_ci_quality) as ref_in_hl_ci_quality,
+                SUM(ref_in_csa_ci_quality) as ref_in_csa_ci_quality,
+                SUM(ref_in_preferred_ci_quality) as ref_in_preferred_ci_quality,
+                SUM(ref_in_bsa_ci_quality) as ref_in_bsa_ci_quality
              FROM v_actuals_for_api
              WHERE team_id IN (${teamPlaceholders})
              AND period_date >= ?
@@ -541,7 +593,14 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
     }
 });
 
-const HEADCOUNT_FLOW_FIELDS = ['starting_headcount', 'flow_1', 'flow_2', 'flow_3', 'flow_4', 'flow_5'];
+const HEADCOUNT_FLOW_FIELDS = [
+    'starting_headcount',
+    'flow_1',
+    'flow_2',
+    'flow_3',
+    'flow_4',
+    'flow_5'
+];
 
 function buildHeadcountFlowUpdate(update) {
     const { teamId, periodDate, dataType, versionId, field, value } = update || {};
@@ -570,23 +629,42 @@ function buildHeadcountFlowUpdate(update) {
         return { error: 'versionId is required for forecast rows' };
     }
 
-    const sql = `
-        INSERT INTO headcount_flows
-            (team_id, period_date, period_label, data_type, version_id, ${field})
-        VALUES (?, ?, DATE_FORMAT(?, '%b-%y'), ?, ?, ?)
-        ON DUPLICATE KEY UPDATE ${field} = VALUES(${field})
+    const versionForSql = normalizedType === 'forecast' ? normalizedVersion : 0;
+
+    const updateSql = `
+        UPDATE headcount_flows
+        SET ${field} = ?
+        WHERE team_id = ? AND period_date = ? AND data_type = ? AND version_id = ?
     `;
 
-    const params = [
+    const updateParams = [
+        numericValue,
+        numericTeam,
+        periodDate,
+        normalizedType,
+        versionForSql
+    ];
+
+    const insertColumns = HEADCOUNT_FLOW_FIELDS.join(', ');
+    const placeholders = HEADCOUNT_FLOW_FIELDS.map(() => '?').join(', ');
+    const flowValues = HEADCOUNT_FLOW_FIELDS.map(key => (key === field ? numericValue : 0));
+
+    const insertSql = `
+        INSERT INTO headcount_flows
+            (team_id, period_date, period_label, data_type, version_id, ${insertColumns})
+        VALUES (?, ?, DATE_FORMAT(?, '%b-%y'), ?, ?, ${placeholders})
+    `;
+
+    const insertParams = [
         numericTeam,
         periodDate,
         periodDate,
         normalizedType,
-        normalizedType === 'forecast' ? normalizedVersion : 0,
-        numericValue
+        versionForSql,
+        ...flowValues
     ];
 
-    return { sql, params };
+    return { updateSql, updateParams, insertSql, insertParams };
 }
 
 app.put('/api/headcount-flows', async (req, res) => {
@@ -597,7 +675,16 @@ app.put('/api/headcount-flows', async (req, res) => {
             return res.status(400).json({ success: false, error: message });
         }
 
-        await forecastPool.execute(prepared.sql, prepared.params);
+        if (req.body?.dataType === 'forecast' || req.body?.dataType == null) {
+            if (await rejectIfVersionLocked({ poolOrConnection: forecastPool, res, versionId: req.body?.versionId })) {
+                return;
+            }
+        }
+
+        const [updateResult] = await forecastPool.execute(prepared.updateSql, prepared.updateParams);
+        if (updateResult.affectedRows === 0) {
+            await forecastPool.execute(prepared.insertSql, prepared.insertParams);
+        }
         res.json({ success: true });
     } catch (error) {
         logger.error('Error updating headcount flow:', error);
@@ -613,6 +700,18 @@ app.put('/api/headcount-flows/bulk', async (req, res) => {
 
     const connection = await forecastPool.getConnection();
     try {
+        const versionIds = Array.from(new Set(
+            updates
+                .filter(update => (update?.dataType || 'forecast') === 'forecast')
+                .map(update => Number(update?.versionId))
+                .filter(v => Number.isFinite(v) && v > 0)
+        ));
+        for (const versionId of versionIds) {
+            if (await rejectIfVersionLocked({ poolOrConnection: connection, res, versionId })) {
+                return;
+            }
+        }
+
         await connection.beginTransaction();
 
         for (const update of updates) {
@@ -623,7 +722,10 @@ app.put('/api/headcount-flows/bulk', async (req, res) => {
                 return res.status(400).json({ success: false, error: message });
             }
 
-            await connection.execute(prepared.sql, prepared.params);
+            const [result] = await connection.execute(prepared.updateSql, prepared.updateParams);
+            if (result.affectedRows === 0) {
+                await connection.execute(prepared.insertSql, prepared.insertParams);
+            }
         }
 
         await connection.commit();

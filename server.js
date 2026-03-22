@@ -21,6 +21,7 @@ const incentivesRoutes = require('./routes/incentives');
 const nonSalesRoutes = require('./routes/nonSales');
 const productionConfigRoutes = require('./routes/productionConfig');
 const referralConfigRoutes = require('./routes/referralConfig');
+const kmpcConfigRoutes = require('./routes/kmpcConfig');
 
 // Create Express app
 const app = express();
@@ -116,6 +117,7 @@ app.use('/api/incentives', incentivesRoutes);
 app.use('/api/non-sales', nonSalesRoutes);
 app.use('/api/production-config', productionConfigRoutes);
 app.use('/api/referral-config', referralConfigRoutes);
+app.use('/api/kmpc-config', kmpcConfigRoutes);
 
 // Combined data endpoint
 app.get('/api/team-data/:teamId/:versionId', async (req, res) => {
@@ -164,10 +166,23 @@ app.get('/api/team-data/:teamId/:versionId', async (req, res) => {
         const [actualsData] = await actualsPool.query(
             `SELECT 
                 a.*,
+                ad.product_aa_weekly_productivity AS product_aa_productivity,
+                ad.product_aa_avg_balance AS product_aa_abpa,
+                ad.product_bb_weekly_productivity AS product_bb_productivity,
+                ad.product_bb_avg_balance AS product_bb_abpa,
+                ad.product_cc_weekly_productivity AS product_cc_productivity,
+                ad.product_cc_avg_balance AS product_cc_abpa,
+                ad.product_dd_weekly_productivity AS product_dd_productivity,
+                ad.product_dd_avg_balance AS product_dd_abpa,
+                ad.product_ee_weekly_productivity AS product_ee_productivity,
+                ad.product_ee_avg_balance AS product_ee_abpa,
                 ${totalBalanceExpr} AS total_balance_calc,
                 ${deepeningRatioExpr} AS deepening_percent,
                 (${totalBalanceExpr}) * ${deepeningRatioExpr} AS deepening_amount
              FROM v_actuals_for_api a
+             JOIN actuals_data ad
+               ON ad.team_id = a.team_id
+              AND ad.period_date = a.period_date
              WHERE a.team_id = ? 
              AND a.period_date >= ? 
              AND a.period_date < ?
@@ -356,26 +371,36 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
 
         const [actualsData] = await actualsPool.query(
             `SELECT 
-                period_date,
-                period_string,
-                business_days,
+                a.period_date,
+                a.period_string,
+                a.business_days,
                 'actual' as data_type,
-                SUM(pg1_headcount) as pg1_headcount,
-                SUM(pg2_headcount) as pg2_headcount,
-                SUM(pg3_headcount) as pg3_headcount,
-                SUM(pg4_headcount) as pg4_headcount,
-                SUM(pg5_headcount) as pg5_headcount,
-                SUM(pg6_headcount) as pg6_headcount,
-                SUM(pg7_headcount) as pg7_headcount,
-                AVG(productivity) as productivity,
-                AVG(product_a_mix) as product_a_mix,
-                AVG(product_b_mix) as product_b_mix,
-                AVG(product_c_mix) as product_c_mix,
-                AVG(product_d_mix) as product_d_mix,
-                AVG(product_a_abpa) as product_a_abpa,
-                AVG(product_b_abpa) as product_b_abpa,
-                AVG(product_c_abpa) as product_c_abpa,
-                AVG(product_d_abpa) as product_d_abpa,
+                SUM(a.pg1_headcount) as pg1_headcount,
+                SUM(a.pg2_headcount) as pg2_headcount,
+                SUM(a.pg3_headcount) as pg3_headcount,
+                SUM(a.pg4_headcount) as pg4_headcount,
+                SUM(a.pg5_headcount) as pg5_headcount,
+                SUM(a.pg6_headcount) as pg6_headcount,
+                SUM(a.pg7_headcount) as pg7_headcount,
+                AVG(a.productivity) as productivity,
+                AVG(a.product_a_mix) as product_a_mix,
+                AVG(a.product_b_mix) as product_b_mix,
+                AVG(a.product_c_mix) as product_c_mix,
+                AVG(a.product_d_mix) as product_d_mix,
+                AVG(a.product_a_abpa) as product_a_abpa,
+                AVG(a.product_b_abpa) as product_b_abpa,
+                AVG(a.product_c_abpa) as product_c_abpa,
+                AVG(a.product_d_abpa) as product_d_abpa,
+                AVG(product_aa_weekly_productivity) as product_aa_productivity,
+                AVG(product_aa_avg_balance) as product_aa_abpa,
+                AVG(product_bb_weekly_productivity) as product_bb_productivity,
+                AVG(product_bb_avg_balance) as product_bb_abpa,
+                AVG(product_cc_weekly_productivity) as product_cc_productivity,
+                AVG(product_cc_avg_balance) as product_cc_abpa,
+                AVG(product_dd_weekly_productivity) as product_dd_productivity,
+                AVG(product_dd_avg_balance) as product_dd_abpa,
+                AVG(product_ee_weekly_productivity) as product_ee_productivity,
+                AVG(product_ee_avg_balance) as product_ee_abpa,
                 SUM(ref_out_fsa_mlwm_quality) as ref_out_fsa_mlwm_quality,
                 SUM(ref_out_fsa_mlwm_total) as ref_out_fsa_mlwm_total,
                 SUM(ref_out_fsa_mlwm_won) as ref_out_fsa_mlwm_won,
@@ -404,12 +429,15 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
                 SUM(ref_in_csa_ci_quality) as ref_in_csa_ci_quality,
                 SUM(ref_in_preferred_ci_quality) as ref_in_preferred_ci_quality,
                 SUM(ref_in_bsa_ci_quality) as ref_in_bsa_ci_quality
-             FROM v_actuals_for_api
-             WHERE team_id IN (${teamPlaceholders})
-             AND period_date >= ?
-             AND period_date < ?
-             GROUP BY period_date, period_string, business_days
-             ORDER BY period_date`,
+             FROM v_actuals_for_api a
+             JOIN actuals_data ad
+               ON ad.team_id = a.team_id
+              AND ad.period_date = a.period_date
+             WHERE a.team_id IN (${teamPlaceholders})
+             AND a.period_date >= ?
+             AND a.period_date < ?
+             GROUP BY a.period_date, a.period_string, a.business_days
+             ORDER BY a.period_date`,
             actualParams
         );
 
@@ -435,7 +463,17 @@ app.get('/api/group-data/:groupName/:versionId', async (req, res) => {
                 AVG(product_a_abpa) as product_a_abpa,
                 AVG(product_b_abpa) as product_b_abpa,
                 AVG(product_c_abpa) as product_c_abpa,
-                AVG(product_d_abpa) as product_d_abpa
+                AVG(product_d_abpa) as product_d_abpa,
+                AVG(product_aa_productivity) as product_aa_productivity,
+                AVG(product_aa_abpa) as product_aa_abpa,
+                AVG(product_bb_productivity) as product_bb_productivity,
+                AVG(product_bb_abpa) as product_bb_abpa,
+                AVG(product_cc_productivity) as product_cc_productivity,
+                AVG(product_cc_abpa) as product_cc_abpa,
+                AVG(product_dd_productivity) as product_dd_productivity,
+                AVG(product_dd_abpa) as product_dd_abpa,
+                AVG(product_ee_productivity) as product_ee_productivity,
+                AVG(product_ee_abpa) as product_ee_abpa
              FROM forecast_data
              WHERE team_id IN (${teamPlaceholders})
              AND version_id = ?

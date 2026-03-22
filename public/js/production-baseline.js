@@ -101,33 +101,73 @@ async function loadProductionConfig(versionId) {
     return AppState.productionConfig;
 }
 
-function getProductionBaselineKey() {
+function getProductionBaselineKey(mode = AppState.productionSubtab || 'investments') {
     if (!AppState.currentVersion) {
-        return 'unknown';
+        return `unknown|${mode}`;
     }
-    return `${AppState.currentVersion.version_id}|${AppState.currentTeam}`;
+    return `${AppState.currentVersion.version_id}|${AppState.currentTeam}|${mode}`;
 }
 
-function getProductionBaselineState() {
+function createDefaultBaselineState(mode = 'investments') {
+    if (mode === 'banking') {
+        return {
+            period: 12,
+            productivity: {},
+            abpa: {}
+        };
+    }
+
+    return {
+        period: 12,
+        productivity: null,
+        mix: {},
+        abpa: {},
+        deepeningPercent: null
+    };
+}
+
+function getProductionBaselineState(mode = AppState.productionSubtab || 'investments') {
     if (!AppState.productionBaselineState) {
         AppState.productionBaselineState = {};
     }
-    const key = getProductionBaselineKey();
+    const key = getProductionBaselineKey(mode);
     if (!AppState.productionBaselineState[key]) {
-        AppState.productionBaselineState[key] = {
-            period: 12,
-            productivity: null,
-            mix: {},
-            abpa: {},
-            deepeningPercent: null
-        };
+        AppState.productionBaselineState[key] = createDefaultBaselineState(mode);
     }
     return AppState.productionBaselineState[key];
 }
 
-function computeProductionBaselineAverages(data, months, period) {
+function computeProductionBaselineAverages(data, months, period, mode = 'investments') {
     const actualMonths = months.filter(month => data.forecastStatus[month] !== 'Forecast');
     const trailing = actualMonths.slice(-period);
+
+    if (mode === 'banking') {
+        const result = {
+            productivity: {},
+            abpa: {}
+        };
+
+        ADDITIONAL_PRODUCTS.forEach(product => {
+            result.productivity[product] = 0;
+            result.abpa[product] = 0;
+        });
+
+        if (trailing.length === 0) {
+            return result;
+        }
+
+        ADDITIONAL_PRODUCTS.forEach(product => {
+            result.productivity[product] = trailing.reduce((sum, month) => (
+                sum + toNumber(data.additionalProducts?.[product]?.productivity?.[month], 0)
+            ), 0) / trailing.length;
+            result.abpa[product] = trailing.reduce((sum, month) => (
+                sum + toNumber(data.additionalProducts?.[product]?.abpa?.[month], 0)
+            ), 0) / trailing.length;
+        });
+
+        return result;
+    }
+
     const result = {
         productivity: 0,
         mix: {},
@@ -152,7 +192,7 @@ function computeProductionBaselineAverages(data, months, period) {
     return result;
 }
 
-function updateBaselineAverageCells(column, averages, period) {
+function updateBaselineAverageCells(column, averages, period, mode = 'investments') {
     if (!column) return;
 
     const periodLabel = column.querySelector('.baseline-avg-value');
@@ -168,14 +208,28 @@ function updateBaselineAverageCells(column, averages, period) {
         }
     };
 
-    setAvg('.baseline-row--metric[data-baseline-metric="productivity"]', toNumber(averages.productivity, 0).toFixed(2));
-    setAvg('.baseline-row--metric[data-baseline-metric="deepening-percent"]', `${(toNumber(averages.deepeningPercent, 0) * 100).toFixed(1)}%`);
+    if (mode === 'banking') {
+        ADDITIONAL_PRODUCTS.forEach(product => {
+            const slug = resolveSlug(product);
+            setAvg(
+                `.baseline-row--metric[data-baseline-metric="productivity"][data-baseline-product="${slug}"]`,
+                toNumber(averages.productivity?.[product], 0).toFixed(2)
+            );
+            setAvg(
+                `.baseline-row--metric[data-baseline-metric="abpa"][data-baseline-product="${slug}"]`,
+                `${formatThousands(toNumber(averages.abpa?.[product], 0), 0)}K`
+            );
+        });
+    } else {
+        setAvg('.baseline-row--metric[data-baseline-metric="productivity"]', toNumber(averages.productivity, 0).toFixed(2));
+        setAvg('.baseline-row--metric[data-baseline-metric="deepening-percent"]', `${(toNumber(averages.deepeningPercent, 0) * 100).toFixed(1)}%`);
 
-    PRODUCTS.forEach(product => {
-        const slug = resolveSlug(product);
-        setAvg(`.baseline-row--metric[data-baseline-metric="mix"][data-baseline-product="${slug}"]`, `${(toNumber(averages.mix[product], 0) * 100).toFixed(1)}%`);
-        setAvg(`.baseline-row--metric[data-baseline-metric="abpa"][data-baseline-product="${slug}"]`, `${formatThousands(toNumber(averages.abpa[product], 0), 0)}K`);
-    });
+        PRODUCTS.forEach(product => {
+            const slug = resolveSlug(product);
+            setAvg(`.baseline-row--metric[data-baseline-metric="mix"][data-baseline-product="${slug}"]`, `${(toNumber(averages.mix[product], 0) * 100).toFixed(1)}%`);
+            setAvg(`.baseline-row--metric[data-baseline-metric="abpa"][data-baseline-product="${slug}"]`, `${formatThousands(toNumber(averages.abpa[product], 0), 0)}K`);
+        });
+    }
 
     column.querySelectorAll('.baseline-section-avg-label').forEach(span => {
         span.textContent = `AVG ${period} MO`;
@@ -184,12 +238,9 @@ function updateBaselineAverageCells(column, averages, period) {
     scheduleBaselineLayoutSync();
 }
 
-function applyProductionBaselines({ data, months, teamId = AppState.currentTeam, updateDom = false } = {}) {
+function applyProductionBaselines({ data, months, teamId = AppState.currentTeam, updateDom = false, mode = 'all' } = {}) {
     if (AppState.isGroupView) return;
     if (!data) return;
-
-    const baselineState = getProductionBaselineState();
-    if (!baselineState || baselineState.productivity == null) return;
 
     const config = AppState.productionConfig || getDefaultProductionConfig();
     const monthList = Array.isArray(months) && months.length
@@ -203,103 +254,168 @@ function applyProductionBaselines({ data, months, teamId = AppState.currentTeam,
     const baseYear = parseInt(`20${forecastMonths[0].split('-')[1]}`, 10);
     if (!Number.isFinite(baseYear)) return;
 
-    const targetRoot = updateDom ? document.getElementById('production-investments-subtab') : null;
+    const modes = mode === 'all' ? ['investments', 'banking'] : [mode];
 
-    const mixBase = {};
-    PRODUCTS.forEach(product => {
-        mixBase[product] = toNumber(baselineState.mix[product], 0);
-    });
+    modes.forEach(activeMode => {
+        const baselineState = getProductionBaselineState(activeMode);
+        if (!baselineState) {
+            return;
+        }
 
-    const otherProducts = PRODUCTS.filter(product => product !== MGIA_PRODUCT_NAME && product !== SELF_DIRECTED_PRODUCT_NAME);
-    const otherBaseSum = otherProducts.reduce((sum, product) => sum + mixBase[product], 0);
-    const mgiaBase = mixBase[MGIA_PRODUCT_NAME] ?? 0;
-
-    forecastMonths.forEach(month => {
-        const [monthKey, yearSuffix] = month.split('-');
-        const fullYear = parseInt(`20${yearSuffix}`, 10);
-        const yearDiff = Number.isFinite(fullYear) ? Math.max(0, fullYear - baseYear) : 0;
-
-        const baseProd = toNumber(baselineState.productivity, 0);
-        const seasonalProd = config.seasonality?.productivity?.[monthKey] ?? 1;
-        const productivityGrowth = Math.pow(1 + (config.growth?.productivity ?? 0), yearDiff);
-        const monthlyProd = Number((baseProd * seasonalProd * productivityGrowth).toFixed(2));
-        data.productivity[month] = monthlyProd.toFixed(2);
-
-        if (updateDom && targetRoot) {
-            const prodInput = targetRoot.querySelector(`input[data-metric="productivity"][data-month="${month}"]`);
-            if (prodInput) {
-                prodInput.value = monthlyProd.toFixed(2);
+        if (activeMode === 'banking') {
+            const hasBankingBaseline = ADDITIONAL_PRODUCTS.some(product => (
+                baselineState.productivity?.[product] != null || baselineState.abpa?.[product] != null
+            ));
+            if (!hasBankingBaseline) {
+                return;
             }
-        }
 
-        if (!data.deepening) {
-            data.deepening = { amount: {}, percent: {} };
-        } else {
-            data.deepening.percent = data.deepening.percent || {};
-            data.deepening.amount = data.deepening.amount || {};
-        }
-        const deepBaseline = toNumber(baselineState.deepeningPercent, 0);
-        data.deepening.percent[month] = deepBaseline;
-        if (updateDom && targetRoot) {
-            const deepInput = targetRoot.querySelector(`input[data-metric="deepening-percent"][data-month="${month}"]`);
-            if (deepInput) {
-                deepInput.value = (deepBaseline * 100).toFixed(1);
+            const targetRoot = updateDom ? document.getElementById('production-banking-subtab') : null;
+
+            forecastMonths.forEach(month => {
+                const [monthKey, yearSuffix] = month.split('-');
+                const fullYear = parseInt(`20${yearSuffix}`, 10);
+                const yearDiff = Number.isFinite(fullYear) ? Math.max(0, fullYear - baseYear) : 0;
+                const seasonalProd = config.seasonality?.productivity?.[monthKey] ?? 1;
+                const seasonalAbpa = config.seasonality?.abpa?.[monthKey] ?? 1;
+                const productivityGrowth = Math.pow(1 + (config.growth?.productivity ?? 0), yearDiff);
+                const abpaGrowth = Math.pow(1 + (config.growth?.abpa ?? 0), yearDiff);
+
+                ADDITIONAL_PRODUCTS.forEach(product => {
+                    const productData = data.additionalProducts?.[product];
+                    if (!productData) {
+                        return;
+                    }
+
+                    const baseProd = toNumber(baselineState.productivity?.[product], 0);
+                    const monthlyProd = Number((baseProd * seasonalProd * productivityGrowth).toFixed(2));
+                    productData.productivity[month] = monthlyProd.toFixed(2);
+
+                    const baseAbpa = toNumber(baselineState.abpa?.[product], 0);
+                    const adjustedAbpa = Math.round(baseAbpa * seasonalAbpa * abpaGrowth);
+                    productData.abpa[month] = adjustedAbpa;
+
+                    if (updateDom && targetRoot) {
+                        const prodInput = targetRoot.querySelector(`input[data-metric="additional-productivity"][data-month="${month}"][data-product="${product}"]`);
+                        if (prodInput) {
+                            prodInput.value = monthlyProd.toFixed(2);
+                        }
+
+                        const abpaInput = targetRoot.querySelector(`input[data-metric="additional-abpa"][data-month="${month}"][data-product="${product}"]`);
+                        if (abpaInput) {
+                            abpaInput.value = String(Math.round(adjustedAbpa / 1000));
+                        }
+                    }
+                });
+            });
+
+            if (typeof recalculateBankingTotals === 'function') {
+                recalculateBankingTotals(teamId);
             }
+            return;
         }
 
-        const mgiaGrowth = config.growth?.mgiaMix ?? 0;
-        const mgiaCap = Math.max(0, 1 - otherBaseSum);
-        const mgiaAdjusted = clamp(mgiaBase * Math.pow(1 + mgiaGrowth, yearDiff), 0, mgiaCap);
-        const selfDirectedAdjusted = clamp(1 - otherBaseSum - mgiaAdjusted, 0, 1);
+        if (baselineState.productivity == null) {
+            return;
+        }
 
+        const targetRoot = updateDom ? document.getElementById('production-investments-subtab') : null;
+        const mixBase = {};
         PRODUCTS.forEach(product => {
-            if (product === MGIA_PRODUCT_NAME) {
-                data.productMix[product][month] = Number(mgiaAdjusted.toFixed(4));
-            } else if (product === SELF_DIRECTED_PRODUCT_NAME) {
-                data.productMix[product][month] = Number(selfDirectedAdjusted.toFixed(4));
-            } else {
-                data.productMix[product][month] = Number((mixBase[product] ?? 0).toFixed(4));
-            }
+            mixBase[product] = toNumber(baselineState.mix[product], 0);
         });
 
-        const totalMix = PRODUCTS.reduce((sum, product) => sum + data.productMix[product][month], 0);
-        if (Math.abs(totalMix - 1) > 0.0001) {
-            const delta = 1 - totalMix;
-            data.productMix[SELF_DIRECTED_PRODUCT_NAME][month] = Number(
-                clamp(data.productMix[SELF_DIRECTED_PRODUCT_NAME][month] + delta, 0, 1).toFixed(4)
-            );
-        }
+        const otherProducts = PRODUCTS.filter(product => product !== MGIA_PRODUCT_NAME && product !== SELF_DIRECTED_PRODUCT_NAME);
+        const otherBaseSum = otherProducts.reduce((sum, product) => sum + mixBase[product], 0);
+        const mgiaBase = mixBase[MGIA_PRODUCT_NAME] ?? 0;
 
-        if (updateDom && targetRoot) {
-            PRODUCTS.forEach(product => {
-                const mixInput = targetRoot.querySelector(`input[data-metric="mix"][data-month="${month}"][data-product="${product}"]`);
-                if (mixInput) {
-                    mixInput.value = Math.round(data.productMix[product][month] * 100);
-                }
-            });
-        }
+        forecastMonths.forEach(month => {
+            const [monthKey, yearSuffix] = month.split('-');
+            const fullYear = parseInt(`20${yearSuffix}`, 10);
+            const yearDiff = Number.isFinite(fullYear) ? Math.max(0, fullYear - baseYear) : 0;
 
-        const seasonalAbpa = config.seasonality?.abpa?.[monthKey] ?? 1;
-        const abpaGrowth = Math.pow(1 + (config.growth?.abpa ?? 0), yearDiff);
-        PRODUCTS.forEach(product => {
-            const baseAbpa = toNumber(baselineState.abpa[product], 0);
-            const adjustedAbpa = Math.round(baseAbpa * seasonalAbpa * abpaGrowth);
-            data.abpa[product][month] = adjustedAbpa;
+            const baseProd = toNumber(baselineState.productivity, 0);
+            const seasonalProd = config.seasonality?.productivity?.[monthKey] ?? 1;
+            const productivityGrowth = Math.pow(1 + (config.growth?.productivity ?? 0), yearDiff);
+            const monthlyProd = Number((baseProd * seasonalProd * productivityGrowth).toFixed(2));
+            data.productivity[month] = monthlyProd.toFixed(2);
 
             if (updateDom && targetRoot) {
-                const abpaInput = targetRoot.querySelector(`input[data-metric="abpa"][data-month="${month}"][data-product="${product}"]`);
-                if (abpaInput) {
-                    abpaInput.value = String(Math.round(adjustedAbpa / 1000));
+                const prodInput = targetRoot.querySelector(`input[data-metric="productivity"][data-month="${month}"]`);
+                if (prodInput) {
+                    prodInput.value = monthlyProd.toFixed(2);
                 }
             }
+
+            if (!data.deepening) {
+                data.deepening = { amount: {}, percent: {} };
+            } else {
+                data.deepening.percent = data.deepening.percent || {};
+                data.deepening.amount = data.deepening.amount || {};
+            }
+            const deepBaseline = toNumber(baselineState.deepeningPercent, 0);
+            data.deepening.percent[month] = deepBaseline;
+            if (updateDom && targetRoot) {
+                const deepInput = targetRoot.querySelector(`input[data-metric="deepening-percent"][data-month="${month}"]`);
+                if (deepInput) {
+                    deepInput.value = (deepBaseline * 100).toFixed(1);
+                }
+            }
+
+            const mgiaGrowth = config.growth?.mgiaMix ?? 0;
+            const mgiaCap = Math.max(0, 1 - otherBaseSum);
+            const mgiaAdjusted = clamp(mgiaBase * Math.pow(1 + mgiaGrowth, yearDiff), 0, mgiaCap);
+            const selfDirectedAdjusted = clamp(1 - otherBaseSum - mgiaAdjusted, 0, 1);
+
+            PRODUCTS.forEach(product => {
+                if (product === MGIA_PRODUCT_NAME) {
+                    data.productMix[product][month] = Number(mgiaAdjusted.toFixed(4));
+                } else if (product === SELF_DIRECTED_PRODUCT_NAME) {
+                    data.productMix[product][month] = Number(selfDirectedAdjusted.toFixed(4));
+                } else {
+                    data.productMix[product][month] = Number((mixBase[product] ?? 0).toFixed(4));
+                }
+            });
+
+            const totalMix = PRODUCTS.reduce((sum, product) => sum + data.productMix[product][month], 0);
+            if (Math.abs(totalMix - 1) > 0.0001) {
+                const delta = 1 - totalMix;
+                data.productMix[SELF_DIRECTED_PRODUCT_NAME][month] = Number(
+                    clamp(data.productMix[SELF_DIRECTED_PRODUCT_NAME][month] + delta, 0, 1).toFixed(4)
+                );
+            }
+
+            if (updateDom && targetRoot) {
+                PRODUCTS.forEach(product => {
+                    const mixInput = targetRoot.querySelector(`input[data-metric="mix"][data-month="${month}"][data-product="${product}"]`);
+                    if (mixInput) {
+                        mixInput.value = Math.round(data.productMix[product][month] * 100);
+                    }
+                });
+            }
+
+            const seasonalAbpa = config.seasonality?.abpa?.[monthKey] ?? 1;
+            const abpaGrowth = Math.pow(1 + (config.growth?.abpa ?? 0), yearDiff);
+            PRODUCTS.forEach(product => {
+                const baseAbpa = toNumber(baselineState.abpa[product], 0);
+                const adjustedAbpa = Math.round(baseAbpa * seasonalAbpa * abpaGrowth);
+                data.abpa[product][month] = adjustedAbpa;
+
+                if (updateDom && targetRoot) {
+                    const abpaInput = targetRoot.querySelector(`input[data-metric="abpa"][data-month="${month}"][data-product="${product}"]`);
+                    if (abpaInput) {
+                        abpaInput.value = String(Math.round(adjustedAbpa / 1000));
+                    }
+                }
+            });
+
+            updateProductionCalculations(teamId, month);
         });
 
-        updateProductionCalculations(teamId, month);
+        if (updateDom) {
+            validateAllProductMix();
+        }
     });
-
-    if (updateDom) {
-        validateAllProductMix();
-    }
 }
 
 
@@ -307,7 +423,7 @@ function valuesApproximatelyEqual(a, b, tolerance = 0.0001) {
     return Math.abs((Number(a) || 0) - (Number(b) || 0)) <= tolerance;
 }
 
-function createBaselineChangeSnapshot({ data, months, teamId = AppState.currentTeam } = {}) {
+function createBaselineChangeSnapshot({ data, months, teamId = AppState.currentTeam, mode = 'investments' } = {}) {
     if (!data) return null;
     const monthList = Array.isArray(months) && months.length
         ? months
@@ -317,6 +433,39 @@ function createBaselineChangeSnapshot({ data, months, teamId = AppState.currentT
 
     const team = String(teamId);
     const records = [];
+
+    if (mode === 'banking') {
+        forecastMonths.forEach(month => {
+            ADDITIONAL_PRODUCTS.forEach(product => {
+                const prodValue = Number(toNumber(data.additionalProducts?.[product]?.productivity?.[month], 0).toFixed(2));
+                const abpaValue = Math.round(toNumber(data.additionalProducts?.[product]?.abpa?.[month], 0));
+                records.push({ team, month, metric: 'additional-productivity', product, previousValue: prodValue });
+                records.push({ team, month, metric: 'additional-abpa', product, previousValue: abpaValue });
+            });
+        });
+
+        return {
+            team,
+            finalize() {
+                const changes = [];
+                records.forEach(entry => {
+                    let newValue;
+                    if (entry.metric === 'additional-productivity') {
+                        newValue = Number(toNumber(data.additionalProducts?.[entry.product]?.productivity?.[entry.month], 0).toFixed(2));
+                        if (!valuesApproximatelyEqual(entry.previousValue, newValue, 0.01)) {
+                            changes.push({ ...entry, newValue });
+                        }
+                    } else if (entry.metric === 'additional-abpa') {
+                        newValue = Math.round(toNumber(data.additionalProducts?.[entry.product]?.abpa?.[entry.month], 0));
+                        if (!valuesApproximatelyEqual(entry.previousValue, newValue, 0.5)) {
+                            changes.push({ ...entry, newValue });
+                        }
+                    }
+                });
+                return changes;
+            }
+        };
+    }
 
     forecastMonths.forEach(month => {
         const baseProd = Number(toNumber(data.productivity[month], 0).toFixed(2));
@@ -365,14 +514,14 @@ function createBaselineChangeSnapshot({ data, months, teamId = AppState.currentT
     };
 }
 
-function pushBaselineUndoAction(changes) {
+function pushBaselineUndoAction(changes, mode = 'investments') {
     if (!Array.isArray(changes) || !changes.length || typeof AppState === 'undefined') {
         return;
     }
     AppState.undoStack.push({
         type: 'baselineApply',
         data: changes,
-        context: { tab: 'production', subtab: 'investments' }
+        context: { tab: 'production', subtab: mode }
     });
     AppState.redoStack = [];
     if (typeof updateUndoRedoButtons === 'function') {
@@ -422,26 +571,29 @@ function handleProductionBaselinePeriodChange(event) {
     const period = parseInt(select.value, 10);
     if (!Number.isFinite(period)) return;
 
-    const baselineState = getProductionBaselineState();
+    const column = select.closest('.production-baseline-column');
+    const mode = column?.dataset.baselineMode || AppState.productionSubtab || 'investments';
+    const baselineState = getProductionBaselineState(mode);
     baselineState.period = period;
 
     const months = typeof generateMonthList === 'function' ? generateMonthList() : [];
     const teamKey = `Team ${AppState.currentTeam}`;
     const data = AppState.teamData[AppState.currentForecast]?.[teamKey];
     if (data && months.length) {
-        const snapshot = createBaselineChangeSnapshot({ data, months, teamId: AppState.currentTeam });
-        const averages = computeProductionBaselineAverages(data, months, period);
-        updateBaselineAverageCells(select.closest('.production-baseline-column'), averages, period);
+        const snapshot = createBaselineChangeSnapshot({ data, months, teamId: AppState.currentTeam, mode });
+        const averages = computeProductionBaselineAverages(data, months, period, mode);
+        updateBaselineAverageCells(column, averages, period, mode);
         applyProductionBaselines({
             data,
             months,
             teamId: AppState.currentTeam,
-            updateDom: AppState.currentTab === 'production' && AppState.productionSubtab === 'investments'
+            updateDom: AppState.currentTab === 'production' && AppState.productionSubtab === mode,
+            mode
         });
         if (snapshot) {
             const changes = snapshot.finalize();
             if (changes.length) {
-                pushBaselineUndoAction(changes);
+                pushBaselineUndoAction(changes, mode);
                 persistBaselineChanges(changes);
             }
         }
@@ -452,16 +604,36 @@ function handleProductionBaselineInputChange(event) {
     const input = event.target;
     const metric = input.dataset.baselineMetric;
     const product = input.dataset.baselineProduct;
-    const baselineState = getProductionBaselineState();
     const column = input.closest('.production-baseline-column');
+    const mode = column?.dataset.baselineMode || AppState.productionSubtab || 'investments';
+    const baselineState = getProductionBaselineState(mode);
 
     const normalizeProductName = (name) => {
         if (!name) return name;
-        const matches = PRODUCTS.filter(productName => productName === name);
+        const sourceList = mode === 'banking' ? ADDITIONAL_PRODUCTS : PRODUCTS;
+        const matches = sourceList.filter(productName => productName === name);
         return matches.length ? matches[0] : name;
     };
 
-    if (metric === 'productivity') {
+    if (mode === 'banking' && metric === 'productivity') {
+        const productName = normalizeProductName(product);
+        let value = Number(input.value);
+        if (!Number.isFinite(value)) {
+            value = toNumber(baselineState.productivity?.[productName], 0);
+        }
+        value = Number(value.toFixed(2));
+        baselineState.productivity[productName] = value;
+        input.value = value.toFixed(2);
+    } else if (mode === 'banking' && metric === 'abpa') {
+        const productName = normalizeProductName(product);
+        let value = Number(input.value);
+        if (!Number.isFinite(value)) {
+            value = toNumber(baselineState.abpa?.[productName], 0) / 1000;
+        }
+        value = Math.max(0, Math.round(value));
+        baselineState.abpa[productName] = value * 1000;
+        input.value = String(value);
+    } else if (metric === 'productivity') {
         let value = Number(input.value);
         if (!Number.isFinite(value)) {
             value = baselineState.productivity ?? 0;
@@ -503,20 +675,21 @@ function handleProductionBaselineInputChange(event) {
     const teamKey = `Team ${AppState.currentTeam}`;
     const data = AppState.teamData[AppState.currentForecast]?.[teamKey];
     if (data && months.length) {
-        const snapshot = createBaselineChangeSnapshot({ data, months, teamId: AppState.currentTeam });
+        const snapshot = createBaselineChangeSnapshot({ data, months, teamId: AppState.currentTeam, mode });
         const period = baselineState.period || 12;
-        const averages = computeProductionBaselineAverages(data, months, period);
-        updateBaselineAverageCells(column, averages, period);
+        const averages = computeProductionBaselineAverages(data, months, period, mode);
+        updateBaselineAverageCells(column, averages, period, mode);
         applyProductionBaselines({
             data,
             months,
             teamId: AppState.currentTeam,
-            updateDom: AppState.currentTab === 'production' && AppState.productionSubtab === 'investments'
+            updateDom: AppState.currentTab === 'production' && AppState.productionSubtab === mode,
+            mode
         });
         if (snapshot) {
             const changes = snapshot.finalize();
             if (changes.length) {
-                pushBaselineUndoAction(changes);
+                pushBaselineUndoAction(changes, mode);
                 persistBaselineChanges(changes);
             }
         }
@@ -545,6 +718,7 @@ function syncProductionBaselineLayout(container) {
     const baselineColumn = container.querySelector('.production-baseline-column');
     const table = container.querySelector('.production-table');
     if (!baselineColumn || !table) return;
+    const mode = baselineColumn.dataset.baselineMode || 'investments';
 
     baselineColumn.querySelectorAll('.baseline-row--metric, .baseline-row--spacer, .baseline-row--divider').forEach(row => {
         row.style.height = '';
@@ -580,6 +754,64 @@ function syncProductionBaselineLayout(container) {
             cell.style.height = `${height}px`;
         });
     };
+
+    const setSectionHeight = (element, headerRow, rows = []) => {
+        if (!element || !headerRow || !rows.length) return;
+        const headerRect = headerRow.getBoundingClientRect();
+        const lastRect = rows[rows.length - 1].getBoundingClientRect();
+        const finalHeight = Math.max(0, lastRect.bottom - headerRect.top);
+        element.style.height = `${finalHeight}px`;
+        element.style.minHeight = `${finalHeight}px`;
+        element.style.maxHeight = `${finalHeight}px`;
+    };
+
+    if (mode === 'banking') {
+        const topSpacer = baselineColumn.querySelector('.baseline-spacer--banking-top');
+        const totalAccountsRow = getAnchorRow('banking-total-accounts');
+        const productivityHeaderRow = getAnchorRow('banking-productivity-header');
+        if (topSpacer && totalAccountsRow && productivityHeaderRow) {
+            const totalAccountsRect = totalAccountsRow.getBoundingClientRect();
+            const productivityHeaderRect = productivityHeaderRow.getBoundingClientRect();
+            const finalHeight = Math.max(0, productivityHeaderRect.bottom - totalAccountsRect.top);
+            topSpacer.style.height = `${finalHeight}px`;
+            topSpacer.style.minHeight = `${finalHeight}px`;
+            topSpacer.style.maxHeight = `${finalHeight}px`;
+        }
+
+        baselineColumn.querySelectorAll('.baseline-row--metric[data-baseline-metric="productivity"]').forEach(row => {
+            const slug = row.getAttribute('data-baseline-product');
+            setRowHeight(row, getAnchorRow('banking-productivity', slug));
+        });
+
+        baselineColumn.querySelectorAll('.baseline-row--metric[data-baseline-metric="abpa"]').forEach(row => {
+            const slug = row.getAttribute('data-baseline-product');
+            setRowHeight(row, getAnchorRow('banking-abpa', slug));
+        });
+
+        const accountHeader = getAnchorRow('banking-accounts-header');
+        const accountRows = Array.from(table.querySelectorAll('tr[data-baseline-anchor="banking-accounts"]'));
+        setSectionHeight(
+            baselineColumn.querySelector('.baseline-spacer--banking-accounts'),
+            accountHeader,
+            accountRows
+        );
+
+        const balanceHeader = getAnchorRow('banking-balances-header');
+        const balanceRows = Array.from(table.querySelectorAll('tr[data-baseline-anchor="banking-balances"]'));
+        setSectionHeight(
+            baselineColumn.querySelector('.baseline-spacer--banking-balances'),
+            balanceHeader,
+            balanceRows
+        );
+
+        const tailSpacer = baselineColumn.querySelector('.baseline-spacer--tail');
+        if (tailSpacer) {
+            tailSpacer.style.height = '10px';
+            tailSpacer.style.minHeight = '';
+            tailSpacer.style.maxHeight = '';
+        }
+        return;
+    }
 
     setSpacerHeight(baselineColumn.querySelector('.baseline-spacer--headcount'), getAnchorRow('headcount'));
     setRowHeight(baselineColumn.querySelector('.baseline-row--metric[data-baseline-metric="productivity"]'), getAnchorRow('productivity'));
@@ -629,8 +861,11 @@ function scheduleBaselineLayoutSync() {
     }
     baselineLayoutRaf = requestAnimationFrame(() => {
         baselineLayoutRaf = null;
-        if (AppState.currentTab === 'production' && AppState.productionSubtab === 'investments') {
-            const container = document.getElementById('production-investments-subtab');
+        if (AppState.currentTab === 'production' && (AppState.productionSubtab === 'investments' || AppState.productionSubtab === 'banking')) {
+            const containerId = AppState.productionSubtab === 'banking'
+                ? 'production-banking-subtab'
+                : 'production-investments-subtab';
+            const container = document.getElementById(containerId);
             if (container) {
                 syncProductionBaselineLayout(container);
             }
@@ -642,20 +877,38 @@ window.addEventListener('resize', scheduleBaselineLayoutSync);
 
 function ensureBaselineStateInitialized(data) {
     if (!data) return;
-    const baselineState = getProductionBaselineState();
-    if (!baselineState) return;
-    const months = typeof generateMonthList === 'function' ? generateMonthList() : [];
-    const period = baselineState.period || 12;
-    const averages = computeProductionBaselineAverages(data, months, period);
-    if (baselineState.productivity == null) {
-        baselineState.productivity = Number(toNumber(averages.productivity, 0).toFixed(2));
-    }
-    PRODUCTS.forEach(product => {
-        if (baselineState.mix[product] == null) {
-            baselineState.mix[product] = toNumber(averages.mix[product], 0);
+    ['investments', 'banking'].forEach(mode => {
+        const baselineState = getProductionBaselineState(mode);
+        if (!baselineState) return;
+        const months = typeof generateMonthList === 'function' ? generateMonthList() : [];
+        const period = baselineState.period || 12;
+        const averages = computeProductionBaselineAverages(data, months, period, mode);
+
+        if (mode === 'banking') {
+            ADDITIONAL_PRODUCTS.forEach(product => {
+                if (baselineState.productivity[product] == null) {
+                    baselineState.productivity[product] = Number(toNumber(averages.productivity?.[product], 0).toFixed(2));
+                }
+                if (baselineState.abpa[product] == null) {
+                    baselineState.abpa[product] = Math.round(toNumber(averages.abpa?.[product], 0));
+                }
+            });
+            return;
         }
-        if (baselineState.abpa[product] == null) {
-            baselineState.abpa[product] = Math.round(toNumber(averages.abpa[product], 0));
+
+        if (baselineState.productivity == null) {
+            baselineState.productivity = Number(toNumber(averages.productivity, 0).toFixed(2));
+        }
+        PRODUCTS.forEach(product => {
+            if (baselineState.mix[product] == null) {
+                baselineState.mix[product] = toNumber(averages.mix[product], 0);
+            }
+            if (baselineState.abpa[product] == null) {
+                baselineState.abpa[product] = Math.round(toNumber(averages.abpa[product], 0));
+            }
+        });
+        if (baselineState.deepeningPercent == null) {
+            baselineState.deepeningPercent = toNumber(averages.deepeningPercent, 0);
         }
     });
 }

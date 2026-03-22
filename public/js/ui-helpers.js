@@ -91,56 +91,33 @@ function updateUndoRedoButtons() {
 
 // Scroll to view functions
 function scrollToView(view) {
-    const wrapper = document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
+    const wrapper = typeof getActiveWrapper === 'function'
+        ? getActiveWrapper()
+        : document.querySelector(`#${AppState.currentTab}-tab .data-table-wrapper`);
     if (!wrapper) return;
     
     const table = wrapper.querySelector('table');
     if (!table) return;
-    
-    const headers = table.querySelectorAll('thead tr:last-child th');
-    
-    let targetIndex = 0;
-    if (view === 'quarterly') {
-        // Find first quarter column
-        for (let i = 0; i < headers.length; i++) {
-            if (headers[i].textContent.includes('Q')) {
-                targetIndex = i;
-                break;
-            }
-        }
-    } else if (view === 'yearly') {
-        // Find first year column
-        for (let i = headers.length - 1; i >= 0; i--) {
-            const headerText = headers[i].textContent;
-            if (headerText === 'FY23' || headerText === 'Total' || headerText === 'Avg') {
-                let foundQuarter = false;
-                for (let j = i - 1; j >= 0; j--) {
-                    if (headers[j].textContent.includes('Q')) {
-                        foundQuarter = true;
-                        break;
-                    }
-                }
-                if (foundQuarter) {
-                    targetIndex = i;
-                    break;
-                }
-            }
-        }
-    } else {
-        // Monthly view - scroll to beginning
-        targetIndex = 1;
-    }
-    
-    if (targetIndex > 0) {
-        const targetElement = headers[targetIndex];
-        const firstColumn = headers[0];
-        const firstColumnWidth = firstColumn.offsetWidth;
-        const elementLeft = targetElement.offsetLeft - firstColumnWidth - 10;
-        const scrollLeft = Math.max(0, elementLeft);
-        wrapper.scrollTo({ left: scrollLeft, behavior: 'smooth' });
-        
-        AppState.scrollPositions[AppState.currentTab] = scrollLeft;
-    }
+
+    const targetSelectorMap = {
+        monthly: 'thead tr:last-child th.actual-col, thead tr:last-child th.forecast-col',
+        quarterly: 'thead tr:last-child th.quarter-col',
+        yearly: 'thead tr:first-child th.year-total-col'
+    };
+
+    const targetElement = table.querySelector(targetSelectorMap[view] || targetSelectorMap.monthly);
+    if (!targetElement) return;
+
+    const stickyColumn = table.querySelector('thead tr:first-child th[rowspan]') || table.querySelector('thead th');
+    const stickyWidth = stickyColumn ? stickyColumn.offsetWidth : 0;
+    const scrollLeft = Math.max(0, targetElement.offsetLeft - stickyWidth - 12);
+
+    wrapper.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+
+    const scrollKey = typeof getScrollKeyForState === 'function'
+        ? getScrollKeyForState()
+        : AppState.currentTab;
+    AppState.scrollPositions[scrollKey] = scrollLeft;
 }
 
 function closeModal() {

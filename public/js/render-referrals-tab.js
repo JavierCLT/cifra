@@ -91,6 +91,10 @@
         return AppState.referralBaselineState[key];
     }
 
+    function canEditSelectedForecast() {
+        return !AppState.isGroupView && !!AppState.currentVersion && !AppState.currentVersion.is_locked;
+    }
+
     function computeReferralBaselineAverage(data, flowKey, months, period = 12) {
         if (!data || !months || !months.length) return DEFAULT_TOTAL_RATIO;
         const actualMonths = months.filter(month => data.forecastStatus[month] !== 'Forecast');
@@ -313,12 +317,15 @@
     }
 
     function renderReferralsTableHeader(data, months) {
+        const firstForecastMonth = typeof getFirstForecastMonthKey === 'function'
+            ? getFirstForecastMonthKey(data.forecastStatus, months)
+            : (months.find(month => data.forecastStatus[month] === 'Forecast') || null);
         let html = '<thead><tr><th rowspan="2">Metric</th>';
         months.forEach((month, idx) => {
             const isForecast = data.forecastStatus[month] === 'Forecast';
-            const className = isForecast ? 'forecast-col' : 'actual-col';
+            const headerClasses = [isForecast ? 'forecast-col' : 'actual-col'];
             const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
-            html += `<th class="${className}">${businessDays}</th>`;
+            html += `<th class="${headerClasses.join(' ')}">${businessDays}</th>`;
         });
         if (Array.isArray(QUARTERS)) {
             QUARTERS.forEach(() => {
@@ -333,8 +340,11 @@
         html += '</tr><tr>';
         months.forEach(month => {
             const isForecast = data.forecastStatus[month] === 'Forecast';
-            const className = isForecast ? 'forecast-col' : 'actual-col';
-            html += `<th class="${className}">${month}</th>`;
+            const headerClasses = [isForecast ? 'forecast-col' : 'actual-col'];
+            if (month === firstForecastMonth) {
+                headerClasses.push('forecast-start-col');
+            }
+            html += `<th class="${headerClasses.join(' ')}">${month}</th>`;
         });
         if (Array.isArray(QUARTERS)) {
             QUARTERS.forEach(quarter => {
@@ -544,9 +554,7 @@
         const outboundFlows = getOutboundFlows();
         const inboundFlows = getInboundFlows();
         const baselineState = getReferralBaselineState();
-        const canEditBaseline = !AppState.isGroupView &&
-            AppState.currentVersion &&
-            AppState.currentVersion.version_id === 2;
+        const canEditBaseline = canEditSelectedForecast();
         const totalColumns = 1 + months.length +
             (Array.isArray(QUARTERS) ? QUARTERS.length : 0) +
             (Array.isArray(YEARS) ? YEARS.length : 0);

@@ -78,6 +78,13 @@ const API = {
                 body: JSON.stringify(data)
             });
         },
+
+        async createScenario(data) {
+            return await API.request('/forecasts/scenarios', {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        },
         
         async updateData(data) {
             return await API.request('/forecasts/data', {
@@ -208,6 +215,27 @@ const API = {
                 throw new Error('payload is required to save referral settings');
             }
             return await API.request('/referral-config', {
+                method: 'PUT',
+                body: JSON.stringify(payload)
+            });
+        }
+    },
+
+    kmpcConfig: {
+        async get(versionId) {
+            if (!versionId) {
+                throw new Error('versionId is required');
+            }
+            const params = new URLSearchParams({ versionId: String(versionId) });
+            const result = await API.request(`/kmpc-config?${params.toString()}`);
+            return result.data;
+        },
+
+        async save(payload) {
+            if (!payload || typeof payload !== 'object') {
+                throw new Error('payload is required to save KMPC settings');
+            }
+            return await API.request('/kmpc-config', {
                 method: 'PUT',
                 body: JSON.stringify(payload)
             });

@@ -28,6 +28,10 @@
         return `${STORAGE_PREFIX}:${versionPart}:team:${teamId}`;
     }
 
+    function canEditSelectedForecast() {
+        return !window.AppState?.isGroupView && !!window.AppState?.currentVersion && !window.AppState.currentVersion.is_locked;
+    }
+
     function loadState(versionId, versionKey, teamId) {
         const key = makeKey(versionId, versionKey, teamId);
         const existing = cache.get(key);
@@ -1060,7 +1064,7 @@ function renderPanel(container, { versionId, versionKey, teamId, teamData, month
         body.innerHTML = '';
         const panelContainer = document.createElement('div');
         body.appendChild(panelContainer);
-        const canEdit = !window.AppState?.isGroupView && window.AppState?.currentVersion?.version_id === 2;
+        const canEdit = canEditSelectedForecast();
         openContext = renderPanel(panelContainer, {
             versionId,
             versionKey,
@@ -1216,7 +1220,6 @@ function renderPanel(container, { versionId, versionKey, teamId, teamData, month
 
     installHooks();
 })();
-
 
 
 

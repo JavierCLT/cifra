@@ -27,11 +27,13 @@ async function renderIncentiveTab(data) {
     // Get team-specific configuration from API
     const teamId = AppState.currentTeam;
     const versionId = AppState.currentVersion.version_id;
+    const firstForecastMonth = typeof getFirstForecastMonthKey === 'function'
+        ? getFirstForecastMonthKey(data.forecastStatus, months)
+        : (months.find(month => data.forecastStatus[month] === 'Forecast') || months[0]);
 
     const compensableMetrics = await IncentiveCalculator.getCompensableMetrics(teamId, versionId);
 
     // For quality ratios, we need to pass a specific period - use the first forecast month
-    const firstForecastMonth = months.find(month => data.forecastStatus[month] === 'Forecast') || months[0];
     const qualityRatios = await IncentiveCalculator.getQualityRatios(teamId, firstForecastMonth, versionId);
     const expenseGrid = await IncentiveCalculator.getExpenseGrid(teamId, versionId);
     const targetedPayByYear = await IncentiveCalculator.getTargetedPay(teamId);
@@ -45,8 +47,9 @@ async function renderIncentiveTab(data) {
     // Month headers with business days
     months.forEach((month, idx) => {
         const isForecast = data.forecastStatus[month] === 'Forecast';
+        const headerClasses = [isForecast ? 'forecast-col' : 'actual-col'];
         const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
-        html += `<th class="${isForecast ? 'forecast-col' : 'actual-col'}">${businessDays}</th>`;
+        html += `<th class="${headerClasses.join(' ')}">${businessDays}</th>`;
     });
     
     // Quarter columns
@@ -63,7 +66,11 @@ async function renderIncentiveTab(data) {
     // Month names
     months.forEach(month => {
         const isForecast = data.forecastStatus[month] === 'Forecast';
-        html += `<th class="${isForecast ? 'forecast-col' : 'actual-col'}">${month}</th>`;
+        const headerClasses = [isForecast ? 'forecast-col' : 'actual-col'];
+        if (month === firstForecastMonth) {
+            headerClasses.push('forecast-start-col');
+        }
+        html += `<th class="${headerClasses.join(' ')}">${month}</th>`;
     });
     
     // Quarter labels
@@ -400,6 +407,12 @@ async function renderIncentiveTab(data) {
     html += '</tbody></table></div>';
     
     container.innerHTML = html;
+    if (typeof initializeTableScrollbars === 'function') {
+        initializeTableScrollbars(container);
+    }
+    if (typeof initializeStickySectionDividers === 'function') {
+        initializeStickySectionDividers(container);
+    }
 
     // Persist and restore horizontal scroll for better live-preview UX
     try {
@@ -608,4 +621,3 @@ function calculateAverage(values) {
 window.openIncentiveAdminModal = openIncentiveAdminModal;
 window.closeIncentiveAdminModal = closeIncentiveAdminModal;
 window.renderIncentiveTab = renderIncentiveTab;
-

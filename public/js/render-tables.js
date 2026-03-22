@@ -115,6 +115,91 @@ function addFormatting(input) {
     input.value = value.toLocaleString();
 }
 
+function canEditSelectedForecast() {
+    return !AppState.isGroupView && !!AppState.currentVersion && !AppState.currentVersion.is_locked;
+}
+
+function getFirstForecastMonthKey(forecastStatus, months = generateMonthList()) {
+    if (!forecastStatus || !Array.isArray(months)) {
+        return null;
+    }
+    return months.find(month => forecastStatus[month] === 'Forecast') || null;
+}
+
+window.getFirstForecastMonthKey = getFirstForecastMonthKey;
+
+function initializeStickySectionDividers(root) {
+    const context = root instanceof HTMLElement ? root : document;
+    const wrapper = context.querySelector('.data-table-wrapper');
+    if (!wrapper) {
+        return;
+    }
+
+    const host = wrapper.parentElement || context;
+    if (!host) {
+        return;
+    }
+
+    host.classList.add('table-divider-container');
+
+    let overlay = Array.from(host.children).find(child => child.classList?.contains('table-section-overlay'));
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'table-section-overlay';
+        overlay.setAttribute('aria-hidden', 'true');
+        host.insertBefore(overlay, wrapper);
+    }
+
+    const table = wrapper.querySelector('table.data-table');
+    if (!table) {
+        overlay.innerHTML = '';
+        return;
+    }
+
+    const renderBands = () => {
+        const rows = Array.from(table.querySelectorAll('tbody tr')).filter(row => row.querySelector('td.section-header'));
+        overlay.innerHTML = '';
+        if (!rows.length) {
+            return;
+        }
+
+        const wrapperOffset = wrapper.offsetTop;
+        rows.forEach(row => {
+            const cell = row.querySelector('td.section-header');
+            const title = cell?.textContent?.trim();
+            if (!title) {
+                return;
+            }
+            const band = document.createElement('div');
+            band.className = 'table-section-band';
+            band.style.top = `${wrapperOffset + row.offsetTop}px`;
+            band.innerHTML = `<span class="table-section-band__title">${title}</span>`;
+            overlay.appendChild(band);
+        });
+    };
+
+    if (host.__sectionDividerObserver) {
+        host.__sectionDividerObserver.disconnect();
+    }
+    if (host.__sectionDividerResizeHandler) {
+        window.removeEventListener('resize', host.__sectionDividerResizeHandler);
+    }
+
+    const refresh = () => requestAnimationFrame(renderBands);
+    if (typeof ResizeObserver !== 'undefined') {
+        const observer = new ResizeObserver(refresh);
+        observer.observe(wrapper);
+        observer.observe(table);
+        host.__sectionDividerObserver = observer;
+    }
+
+    host.__sectionDividerResizeHandler = refresh;
+    window.addEventListener('resize', refresh);
+    renderBands();
+}
+
+window.initializeStickySectionDividers = initializeStickySectionDividers;
+
 function renderHeadcountFlowsTable(data, months, opts = {}) {
     const DEFAULT_FLOW_ROWS = [
         { key: 'starting_headcount', label: 'Starting Headcount', isStarting: true },
@@ -133,7 +218,7 @@ function renderHeadcountFlowsTable(data, months, opts = {}) {
     const forecastStatus = data.forecastStatus || {};
     const flows = data.headcountFlows || {};
     const teamId = opts.teamId || AppState.currentTeam;
-    const allowEditing = !AppState.isGroupView && AppState.currentVersion && AppState.currentVersion.version_id === 2;
+    const allowEditing = canEditSelectedForecast();
     const editableKeys = new Set(flowRows.filter(row => !row.isCalculated && !row.isStarting).map(row => row.key));
 
     let html = '<div class="headcount-flow-container"><table class="data-table headcount-flow-table">';
@@ -271,7 +356,7 @@ function renderHeadcountTab(data, opts = {}) {
             const value = data.pgLevels[pg][month];
             
             // Check if this is the current forecast (version_id = 2)
-            const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+            const isCurrentForecast = canEditSelectedForecast();
             
             if (isForecast && !AppState.isGroupView && isCurrentForecast) {
                 html += `<td class="forecast-col">
@@ -338,6 +423,7 @@ function renderHeadcountTab(data, opts = {}) {
     container.innerHTML = html;
 
     initializeTableScrollbars(container);
+    initializeStickySectionDividers(container);
 
     // Setup input selection for bulk operations
     setupInputSelection();
@@ -357,7 +443,7 @@ function renderNonSalesHeadcountTab(groupData, opts = {}) {
     const months = generateMonthList();
     const statusMap = groupData.forecastStatus || {};
     const groupKey = groupData.groupKey || AppState.currentNonSalesGroup || 'non-sales';
-    const allowEditing = !AppState.isGroupView && AppState.currentVersion && AppState.currentVersion.version_id === 2;
+    const allowEditing = canEditSelectedForecast();
 
     const teamOrder = Array.isArray(groupData.teamOrder) && groupData.teamOrder.length
         ? groupData.teamOrder
@@ -463,47 +549,105 @@ function renderNonSalesHeadcountTab(groupData, opts = {}) {
     html += '</tr></tbody></table></div>';
     container.innerHTML = html;
     initializeTableScrollbars(container);
+    initializeStickySectionDividers(container);
     setupInputSelection();
 }
 // Render production tab
-function renderProductionBaselineColumn(data, months) {
+function renderProductionBaselineColumn(data, months, mode = 'investments') {
     if (AppState.isGroupView) return '';
 
-    const baselineState = getProductionBaselineState();
+    const baselineState = getProductionBaselineState(mode);
     if (!baselineState) return '';
 
     const period = baselineState.period || 12;
-    const averages = computeProductionBaselineAverages(data, months, period);
+    const averages = computeProductionBaselineAverages(data, months, period, mode);
 
-    if (baselineState.productivity == null) {
-        baselineState.productivity = Number(toNumber(averages.productivity, 0).toFixed(2));
-    }
-    if (baselineState.deepeningPercent == null) {
-        baselineState.deepeningPercent = toNumber(averages.deepeningPercent, 0);
-    }
-
-    PRODUCTS.forEach(product => {
-        if (baselineState.mix[product] == null) {
-            baselineState.mix[product] = toNumber(averages.mix[product], 0);
+    if (mode === 'banking') {
+        ADDITIONAL_PRODUCTS.forEach(product => {
+            if (baselineState.productivity[product] == null) {
+                baselineState.productivity[product] = Number(toNumber(averages.productivity?.[product], 0).toFixed(2));
+            }
+            if (baselineState.abpa[product] == null) {
+                baselineState.abpa[product] = Math.round(toNumber(averages.abpa?.[product], 0));
+            }
+        });
+    } else {
+        if (baselineState.productivity == null) {
+            baselineState.productivity = Number(toNumber(averages.productivity, 0).toFixed(2));
         }
-        if (baselineState.abpa[product] == null) {
-            baselineState.abpa[product] = Math.round(toNumber(averages.abpa[product], 0));
+        if (baselineState.deepeningPercent == null) {
+            baselineState.deepeningPercent = toNumber(averages.deepeningPercent, 0);
         }
-    });
 
-    const allowEditing = !AppState.isGroupView && AppState.currentVersion && AppState.currentVersion.version_id === 2;
+        PRODUCTS.forEach(product => {
+            if (baselineState.mix[product] == null) {
+                baselineState.mix[product] = toNumber(averages.mix[product], 0);
+            }
+            if (baselineState.abpa[product] == null) {
+                baselineState.abpa[product] = Math.round(toNumber(averages.abpa[product], 0));
+            }
+        });
+    }
+
+    const allowEditing = canEditSelectedForecast();
     const slugifyValue = (value) => (typeof slugify === 'function' ? slugify(value) : String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-'));
     const periodOptions = [6, 12, 18].map(option => `<option value="${option}" ${option === period ? 'selected' : ''}>${option} months</option>`).join('');
+    const periodSelectId = `production-baseline-period-${mode}`;
 
-    let html = '<div class="production-baseline-column">';
+    let html = `<div class="production-baseline-column" data-baseline-mode="${mode}">`;
     html += `
         <div class="baseline-top">
             <h3 class="baseline-title">Baseline Auto-Fill</h3>
             <div class="baseline-period-control">
-                <label for="production-baseline-period">Trailing average window</label>
-                <select id="production-baseline-period" class="production-baseline-period" ${allowEditing ? '' : 'disabled'}>${periodOptions}</select>
+                <label for="${periodSelectId}">Trailing average window</label>
+                <select id="${periodSelectId}" class="production-baseline-period" ${allowEditing ? '' : 'disabled'}>${periodOptions}</select>
             </div>
         </div>
+    `;
+
+    if (mode === 'banking') {
+        html += `
+        <div class="baseline-columns">
+            <div class="baseline-column-labels">
+                <span class="baseline-column-label baseline-column-label--avg">
+                    <span class="baseline-avg-label">AVG</span>
+                    <span class="baseline-avg-value">${period} mo</span>
+                </span>
+                <span class="baseline-column-label baseline-column-label--baseline">Baseline</span>
+            </div>
+            <div class="baseline-grid">
+                <div class="baseline-row--spacer baseline-spacer--banking-top"></div>
+                ${ADDITIONAL_PRODUCTS.map(product => {
+                    const slug = slugifyValue(product);
+                    return `
+                    <div class="baseline-row--metric" data-baseline-metric="productivity" data-baseline-product="${slug}">
+                        <div class="baseline-cell--avg">${toNumber(averages.productivity?.[product], 0).toFixed(2)}</div>
+                        <div class="baseline-cell--input">
+                            <input type="number" step="0.01" class="baseline-input" data-baseline-metric="productivity" data-baseline-product="${product}" value="${toNumber(baselineState.productivity?.[product], 0).toFixed(2)}" ${allowEditing ? '' : 'disabled'}>
+                        </div>
+                    </div>`;
+                }).join('')}
+                <div class="baseline-row--spacer baseline-spacer--banking-accounts"></div>
+                ${ADDITIONAL_PRODUCTS.map(product => {
+                    const slug = slugifyValue(product);
+                    const avgValue = formatThousands(toNumber(averages.abpa?.[product], 0), 0);
+                    const baselineValue = Math.round(toNumber(baselineState.abpa?.[product], 0) / 1000);
+                    return `
+                    <div class="baseline-row--metric" data-baseline-metric="abpa" data-baseline-product="${slug}">
+                        <div class="baseline-cell--avg">${avgValue}K</div>
+                        <div class="baseline-cell--input">
+                            <input type="number" step="1" min="0" class="baseline-input" data-baseline-metric="abpa" data-baseline-product="${product}" value="${baselineValue}" ${allowEditing ? '' : 'disabled'}>
+                            <span class="baseline-suffix">K</span>
+                        </div>
+                    </div>`;
+                }).join('')}
+                <div class="baseline-row--spacer baseline-spacer--banking-balances"></div>
+                <div class="baseline-row--spacer baseline-spacer--tail"></div>
+            </div>
+        </div>
+        `;
+    } else {
+        html += `
         <div class="baseline-columns">
             <div class="baseline-column-labels">
                 <span class="baseline-column-label baseline-column-label--avg">
@@ -575,7 +719,8 @@ function renderProductionBaselineColumn(data, months) {
                 
             </div>
         </div>
-    `;
+        `;
+    }
 
     html += '</div>';
     return html;
@@ -587,7 +732,7 @@ function renderProductionTab(data, opts = {}) {
     const months = generateMonthList();
     const slugifyProductName = (value) => (typeof slugify === 'function' ? slugify(value) : String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-'));
     const totalDashCells = QUARTERS.length + YEARS.length;
-    const isCurrentForecastVersion = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+    const isCurrentForecastVersion = canEditSelectedForecast();
     if (!data.deepening) {
         data.deepening = { amount: {}, percent: {} };
     } else {
@@ -598,8 +743,8 @@ function renderProductionTab(data, opts = {}) {
     let layoutClass = 'production-layout';
 
     let baselineColumn = '';
-    if (mode === 'investments' && !AppState.isGroupView) {
-        baselineColumn = renderProductionBaselineColumn(data, months);
+    if ((mode === 'investments' || mode === 'banking') && !AppState.isGroupView) {
+        baselineColumn = renderProductionBaselineColumn(data, months, mode);
         if (!baselineColumn) {
             layoutClass += ' production-layout--single-column';
         }
@@ -674,7 +819,7 @@ function renderProductionTab(data, opts = {}) {
         const isForecast = data.forecastStatus[month] === 'Forecast';
         // Ensure value always has 2 decimals
         const value = parseFloat(data.productivity[month]).toFixed(2);
-        const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+        const isCurrentForecast = canEditSelectedForecast();
         
         if (isForecast && !AppState.isGroupView && isCurrentForecast) {
             html += `<td class="forecast-col">
@@ -822,7 +967,7 @@ function renderProductionTab(data, opts = {}) {
         months.forEach(month => {
             const isForecast = data.forecastStatus[month] === 'Forecast';
             const value = Math.round(data.productMix[product][month] * 100);
-            const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+            const isCurrentForecast = canEditSelectedForecast();
             
             if (isForecast && !AppState.isGroupView && isCurrentForecast) {
                 html += `<td class="forecast-col">
@@ -928,7 +1073,7 @@ function renderProductionTab(data, opts = {}) {
             const value = data.abpa[product][month] || 0;
             const displayValue = formatThousands(value, 0);
             const editableValue = Math.round(value / 1000);
-            const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+            const isCurrentForecast = canEditSelectedForecast();
             
             if (isForecast && !AppState.isGroupView && isCurrentForecast) {
                 html += `<td id="abpa-${productSlug}-${month}" class="forecast-col">
@@ -1091,21 +1236,15 @@ function renderProductionTab(data, opts = {}) {
     }
     // ========== ADDITIONAL PRODUCTS SECTION (Banking) ==========
     if (mode === 'banking' || mode === 'all') {
-    html += '<tr><td colspan="52" class="section-header">Additional Products</td></tr>';
+    html += '<tr data-baseline-anchor="banking-productivity-header"><td colspan="52" class="section-header">Weekly Productivity</td></tr>';
 
-    // Create sub-sections for each additional product
     ADDITIONAL_PRODUCTS.forEach(product => {
-        const productName = `Product ${product}`;
-        
-        // Product sub-header
-        html += `<tr style="height:12px;"><td colspan="52" style="padding:0; background:#f9f9f9;"></td></tr>`;
-        
-        // Productivity row
-        html += `<tr><td>${productName} Productivity</td>`;
+        const productSlug = slugifyProductName(product);
+        html += `<tr data-baseline-anchor="banking-productivity" data-product="${productSlug}"><td>${product} Productivity</td>`;
         months.forEach(month => {
             const isForecast = data.forecastStatus[month] === 'Forecast';
             const value = data.additionalProducts?.[product]?.productivity?.[month] || '0.00';
-            const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+            const isCurrentForecast = canEditSelectedForecast();
             
             if (isForecast && !AppState.isGroupView && isCurrentForecast) {
                 html += `<td class="forecast-col">
@@ -1131,15 +1270,50 @@ function renderProductionTab(data, opts = {}) {
             html += `<td class="${isYearCol ? 'year-total-col' : 'quarter-col'}">-</td>`;
         }
         html += '</tr>';
+    });
+
+    html += '<tr data-baseline-anchor="banking-accounts-header"><td colspan="52" class="section-header">Accounts by Product</td></tr>';
+
+    ADDITIONAL_PRODUCTS.forEach(product => {
+        const productName = `Product ${product}`;
+        const productSlug = slugifyProductName(product);
+        html += `<tr data-baseline-anchor="banking-accounts" data-product="${productSlug}"><td>${productName} Accounts</td>`;
+        const additionalProductAccountsData = {};
+        months.forEach((month, idx) => {
+            const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
+            const weeklyProductivity = parseFloat(data.additionalProducts?.[product]?.productivity?.[month] || 0);
+            const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
+            const accounts = Math.round((headcount * weeklyProductivity * businessDays) / 5);
+            additionalProductAccountsData[month] = accounts;
+            
+            html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" 
+                         id="additional-accounts-${product}-${month}">${formatNumber(accounts)}</td>`;
+        });
         
-        // ABPA row
-        html += `<tr><td>${productName} ABPA ($K)</td>`;
+        QUARTERS.forEach(quarter => {
+            const sum = calculateQuarterSum(additionalProductAccountsData, quarter);
+            html += `<td class="quarter-col">${formatNumber(sum)}</td>`;
+        });
+        
+        YEARS.forEach(year => {
+            const sum = calculateYearSum(additionalProductAccountsData, months, year);
+            html += `<td class="year-total-col">${formatNumber(sum)}</td>`;
+        });
+        html += '</tr>';
+    });
+
+    html += '<tr data-baseline-anchor="banking-abpa-header"><td colspan="52" class="section-header">Average Balance per Account ($K)</td></tr>';
+
+    ADDITIONAL_PRODUCTS.forEach(product => {
+        const productName = `Product ${product}`;
+        const productSlug = slugifyProductName(product);
+        html += `<tr data-baseline-anchor="banking-abpa" data-product="${productSlug}"><td>${productName} ABPA ($K)</td>`;
         months.forEach(month => {
             const isForecast = data.forecastStatus[month] === 'Forecast';
             const value = data.additionalProducts?.[product]?.abpa?.[month] || 0;
             const displayValue = formatThousands(value, 0);
             const editableValue = Math.round(value / 1000);
-            const isCurrentForecast = AppState.currentVersion && AppState.currentVersion.version_id === 2;
+            const isCurrentForecast = canEditSelectedForecast();
             
             if (isForecast && !AppState.isGroupView && isCurrentForecast) {
                 html += `<td id="additional-abpa-${product}-${month}" class="forecast-col">
@@ -1168,47 +1342,31 @@ function renderProductionTab(data, opts = {}) {
             html += `<td class="${isYearCol ? 'year-total-col' : 'quarter-col'}">-</td>`;
         }
         html += '</tr>';
-        
-        // Accounts row (calculated) - UPDATED WITH WEEKLY PRODUCTIVITY
-        html += `<tr><td>${productName} Accounts</td>`;
+    });
+
+    html += '<tr data-baseline-anchor="banking-balances-header"><td colspan="52" class="section-header">Total Balances by Product ($M)</td></tr>';
+
+    ADDITIONAL_PRODUCTS.forEach(product => {
+        const productName = `Product ${product}`;
+        const productSlug = slugifyProductName(product);
+        html += `<tr data-baseline-anchor="banking-balances" data-product="${productSlug}"><td>${productName} Balances</td>`;
         const additionalProductAccountsData = {};
         months.forEach((month, idx) => {
             const headcount = PG_LEVELS.reduce((sum, pg) => sum + data.pgLevels[pg][month], 0);
             const weeklyProductivity = parseFloat(data.additionalProducts?.[product]?.productivity?.[month] || 0);
             const businessDays = window.BUSINESS_DAYS?.[idx] || 21;
-            // Updated formula: (headcount * weekly_productivity * business_days) / 5
             const accounts = Math.round((headcount * weeklyProductivity * businessDays) / 5);
             additionalProductAccountsData[month] = accounts;
-            
-            html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" 
-                         id="additional-accounts-${product}-${month}">${formatNumber(accounts)}</td>`;
-        });
-        
-        // Quarter and year totals for accounts
-        QUARTERS.forEach(quarter => {
-            const sum = calculateQuarterSum(additionalProductAccountsData, quarter);
-            html += `<td class="quarter-col">${formatNumber(sum)}</td>`;
-        });
-        
-        YEARS.forEach(year => {
-            const sum = calculateYearSum(additionalProductAccountsData, months, year);
-            html += `<td class="year-total-col">${formatNumber(sum)}</td>`;
-        });
-        html += '</tr>';
-        
-        // Balances row (calculated)
-        html += `<tr><td>${productName} Balances</td>`;
-        months.forEach(month => {
-            const accounts = additionalProductAccountsData[month] || 0;
+
+            const accountsForMonth = additionalProductAccountsData[month] || 0;
             const abpa = data.additionalProducts?.[product]?.abpa?.[month] || 0;
-            const balance = accounts * abpa;
+            const balance = accountsForMonth * abpa;
             const balanceInMillions = (balance / 1000000).toFixed(1);
             
             html += `<td class="${data.forecastStatus[month] === 'Forecast' ? 'forecast-col' : 'actual-col'} calculated-value" 
                          id="additional-balance-${product}-${month}">$${balanceInMillions}M</td>`;
         });
         
-        // Quarter and year totals for balances
         QUARTERS.forEach(quarter => {
             const quarterMonths = getMonthsInQuarter(quarter);
             let quarterBalance = 0;
@@ -1246,6 +1404,7 @@ function renderProductionTab(data, opts = {}) {
     container.innerHTML = html;
 
     initializeTableScrollbars(container);
+    initializeStickySectionDividers(container);
 
     if ((mode === 'banking' || mode === 'all') && typeof recalculateBankingTotals === 'function' && !AppState.isGroupView) {
         recalculateBankingTotals(AppState.currentTeam);
@@ -1265,7 +1424,10 @@ function renderProductionTab(data, opts = {}) {
         }
     }
 
-    applyProductionBaselines({ data, months, updateDom: mode === 'investments' });
+    applyProductionBaselines({ data, months, updateDom: mode === 'investments' || mode === 'banking', mode });
+    if (!AppState.isGroupView && baselineColumn && typeof scheduleBaselineLayoutSync === 'function') {
+        scheduleBaselineLayoutSync();
+    }
 
     setupInputSelection();
 }
@@ -1644,4 +1806,3 @@ function getQuarterRange() {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { TABLE_CONFIG, YEARS, QUARTERS, getYearRange, getQuarterRange };
 }
-

@@ -246,6 +246,7 @@ window.switchToGroup = switchToGroup;
 
 window.switchForecast = switchForecast;
 window.saveLockAndCloneForecastCycle = saveLockAndCloneForecastCycle;
+window.createScenarioSandbox = createScenarioSandbox;
 
 window.scrollToView = scrollToView;
 
@@ -307,6 +308,9 @@ async function initializeApp() {
         initializeSidebar();
         initializeForecastSelector();
         updateSaveLockButtonVisibility();
+        updateGlobalLayoutState();
+        updateTimelineViewButtonsVisibility();
+        updateCurrentContextDisplay();
         
         // Initialize global selection event listeners
         initializeSelectionListeners();
@@ -1327,6 +1331,56 @@ function initializeSidebar() {
     });
 }
 
+function isTeamAgnosticTab(tabName = AppState.currentTab) {
+    return tabName === 'kmpc';
+}
+
+function isScenarioVersion(version = AppState.currentVersion) {
+    return !!version && (version.is_scenario === true || Number(version.is_scenario) === 1);
+}
+
+function updateGlobalLayoutState() {
+    if (!document.body) {
+        return;
+    }
+    document.body.classList.toggle('team-agnostic-layout', isTeamAgnosticTab());
+}
+
+function updateTimelineViewButtonsVisibility(tabName = AppState.currentTab) {
+    const viewButtons = document.getElementById('timelineViewButtons');
+    if (!viewButtons) {
+        return;
+    }
+    viewButtons.style.display = tabName === 'kmpc' ? 'none' : 'flex';
+}
+
+function updateCurrentContextDisplay() {
+    const display = document.getElementById('currentTeamDisplay');
+    if (!display) {
+        return;
+    }
+
+    const scenarioSourceName = AppState.currentVersion?.source_version_name || 'Live Forecast';
+    const scenarioMeta = isScenarioVersion()
+        ? `<span class="scenario-context"><span class="scenario-badge">Scenario</span><span>Base: ${scenarioSourceName}</span></span>`
+        : '';
+
+    if (isTeamAgnosticTab()) {
+        const versionName = AppState.currentVersion?.version_name || 'selected forecast';
+        display.innerHTML = `KMPC inputs for ${versionName} | Team-agnostic ${scenarioMeta}`;
+        return;
+    }
+
+    if (AppState.isGroupView && AppState.currentGroup) {
+        display.innerHTML = `Group ${AppState.currentGroup} <span class='group-view-indicator'>Read Only</span> ${scenarioMeta}`;
+        return;
+    }
+
+    const team = AppState.teams.find(t => Number(t.team_id) === Number(AppState.currentTeam));
+    const teamName = team ? team.team_name : '';
+    display.innerHTML = `${teamName} ${scenarioMeta}`;
+}
+
 function suggestNextCycleName(versionName) {
     const name = String(versionName || '').trim();
     if (/^\d{1,2}\+\d{1,2}$/.test(name)) {
@@ -1346,7 +1400,8 @@ function updateSaveLockButtonVisibility() {
     }
 
     const locked = !!AppState.currentVersion?.is_locked;
-    const shouldShow = AppState.isAdmin;
+    const scenario = isScenarioVersion();
+    const shouldShow = AppState.isAdmin && !scenario;
     button.style.display = shouldShow ? '' : 'none';
     button.disabled = !shouldShow || locked || AppState.isSaveLockInProgress;
     if (locked) {
@@ -1354,6 +1409,20 @@ function updateSaveLockButtonVisibility() {
     } else {
         button.title = '';
     }
+
+    updateScenarioButtonVisibility();
+}
+
+function updateScenarioButtonVisibility() {
+    const button = document.getElementById('createScenarioBtn');
+    if (!button) {
+        return;
+    }
+
+    const shouldShow = !!AppState.currentVersion && !isScenarioVersion();
+    button.style.display = shouldShow ? '' : 'none';
+    button.disabled = !shouldShow;
+    button.title = shouldShow ? '' : 'Scenarios are created from the live forecast only';
 }
 
 function applyLockedForecastUIState() {
@@ -1377,21 +1446,101 @@ function applyLockedForecastUIState() {
 function initializeForecastSelector() {
     const forecastSelect = document.getElementById('forecastSelect');
     forecastSelect.innerHTML = '';
-    
-    AppState.forecastVersions.forEach(version => {
+
+    const liveVersions = AppState.forecastVersions.filter(version => !isScenarioVersion(version));
+    const scenarioVersions = AppState.forecastVersions.filter(version => isScenarioVersion(version));
+
+    const appendVersionOption = (parent, version) => {
         const option = document.createElement('option');
         option.value = version.version_id;
-        option.textContent = version.is_locked
-            ? `${version.version_name} (Locked)`
-            : version.version_name;
-        forecastSelect.appendChild(option);
-    });
+        const lockedSuffix = version.is_locked ? ' (Locked)' : '';
+        option.textContent = isScenarioVersion(version)
+            ? `${version.scenario_name || version.version_name} [Scenario | Base: ${version.source_version_name || 'Live Forecast'}]${lockedSuffix}`
+            : `${version.version_name}${lockedSuffix}`;
+        parent.appendChild(option);
+    };
+
+    if (liveVersions.length) {
+        const liveGroup = document.createElement('optgroup');
+        liveGroup.label = 'Forecast Cycles';
+        liveVersions.forEach(version => appendVersionOption(liveGroup, version));
+        forecastSelect.appendChild(liveGroup);
+    }
+
+    if (scenarioVersions.length) {
+        const scenarioGroup = document.createElement('optgroup');
+        scenarioGroup.label = 'Scenario Sandboxes';
+        scenarioVersions.forEach(version => appendVersionOption(scenarioGroup, version));
+        forecastSelect.appendChild(scenarioGroup);
+    }
     
     if (AppState.currentVersion) {
         forecastSelect.value = AppState.currentVersion.version_id;
     }
 
     updateSaveLockButtonVisibility();
+}
+
+async function createScenarioSandbox() {
+    if (!AppState.currentVersion || !AppState.currentVersion.version_id) {
+        showError('Select a forecast version first.');
+        return;
+    }
+    if (isScenarioVersion()) {
+        showError('Scenarios can only be created from the live forecast.');
+        return;
+    }
+
+    const sourceName = AppState.currentVersion.version_name;
+    const suggestedName = `${sourceName} Scenario`;
+    const scenarioName = window.prompt('Enter a name for the scenario sandbox:', suggestedName);
+    if (scenarioName == null) {
+        return;
+    }
+
+    const trimmedName = String(scenarioName).trim();
+    if (!trimmedName) {
+        showError('Scenario name is required.');
+        return;
+    }
+
+    const shouldProceed = window.confirm(
+        `Create "${trimmedName}" as a sandbox copy of "${sourceName}"?\n\nChanges made in the scenario will not affect the live forecast.`
+    );
+    if (!shouldProceed) {
+        return;
+    }
+
+    try {
+        showLoadingIndicator('Creating scenario sandbox...');
+        const result = await API.forecasts.createScenario({
+            sourceVersionId: AppState.currentVersion.version_id,
+            scenarioName: trimmedName,
+            userEmail: AppState.currentUser
+        });
+
+        const versions = await API.forecasts.getVersions();
+        AppState.forecastVersions = versions;
+        const newVersionId = result?.data?.newVersionId;
+        AppState.currentVersion = versions.find(v => Number(v.version_id) === Number(newVersionId)) || AppState.currentVersion;
+        AppState.currentForecast = AppState.currentVersion ? AppState.currentVersion.version_name : null;
+        initializeForecastSelector();
+        updateCurrentContextDisplay();
+        if (AppState.currentVersion) {
+            await loadProductionConfig(AppState.currentVersion.version_id);
+        }
+        if (AppState.isGroupView) {
+            renderCurrentTab();
+        } else {
+            await loadTeamData(AppState.currentTeam);
+        }
+        showSaveIndicator();
+    } catch (error) {
+        console.error('Failed to create scenario sandbox', error);
+        showError(error?.message || 'Failed to create scenario sandbox');
+    } finally {
+        hideLoadingIndicator();
+    }
 }
 
 // Load team data
@@ -2205,7 +2354,7 @@ async function switchTeam(teamNumber) {
             }
         });
         
-        document.getElementById('currentTeamDisplay').textContent = team.team_name;
+        updateCurrentContextDisplay();
     }
     
     // Load team data
@@ -2248,8 +2397,7 @@ async function switchToGroup(groupName) {
         }
     });
     
-    document.getElementById('currentTeamDisplay').innerHTML = 
-        `Group ${groupName} <span class='group-view-indicator'>Read Only</span>`;
+    updateCurrentContextDisplay();
     
     // Render the group data
     renderCurrentTab();
@@ -2287,6 +2435,7 @@ async function switchForecast() {
     }
     AppState.currentForecast = AppState.currentVersion.version_name;
     updateSaveLockButtonVisibility();
+    updateCurrentContextDisplay();
     
     await loadProductionConfig(AppState.currentVersion.version_id);
     
@@ -2318,6 +2467,9 @@ function switchTab(tabName) {
     
     AppState.currentTab = tabName;
     updateAdminButtonsVisibility();
+    updateGlobalLayoutState();
+    updateTimelineViewButtonsVisibility(tabName);
+    updateCurrentContextDisplay();
     
     // Update UI
     const tabButtons = document.querySelectorAll('.tabs .tab');
@@ -2729,10 +2881,10 @@ async function renderCurrentTab() {
             renderIncentiveTab(data);
             break;
         case 'kmpc':
-            renderKMPCTab(data);
+            await renderKMPCTab(data);
             break;
         case 'finance':
-            renderFinanceTab(data);
+            await renderFinanceTab(data);
             break;
     }
 

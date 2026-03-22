@@ -40,7 +40,10 @@ async function resolveUniqueVersionName(connection, desiredName) {
 
 async function getTableColumns(connection, tableName) {
     const [rows] = await connection.query(
-        `SELECT column_name, extra
+        `SELECT
+            column_name AS column_name_alias,
+            extra AS extra_alias,
+            generation_expression AS generation_expression_alias
          FROM information_schema.columns
          WHERE table_schema = DATABASE()
            AND table_name = ?
@@ -50,6 +53,25 @@ async function getTableColumns(connection, tableName) {
     return rows || [];
 }
 
+async function ensureForecastScenariosTable(poolOrConnection) {
+    await poolOrConnection.query(
+        `CREATE TABLE IF NOT EXISTS forecast_scenarios (
+            scenario_id INT NOT NULL AUTO_INCREMENT,
+            version_id INT NOT NULL,
+            source_version_id INT NOT NULL,
+            scenario_name VARCHAR(100) NOT NULL,
+            created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            created_by VARCHAR(100) DEFAULT NULL,
+            is_active TINYINT(1) DEFAULT 1,
+            PRIMARY KEY (scenario_id),
+            UNIQUE KEY uniq_forecast_scenarios_version (version_id),
+            KEY idx_forecast_scenarios_source (source_version_id),
+            CONSTRAINT forecast_scenarios_version_fk FOREIGN KEY (version_id) REFERENCES forecast_versions (version_id) ON DELETE CASCADE,
+            CONSTRAINT forecast_scenarios_source_fk FOREIGN KEY (source_version_id) REFERENCES forecast_versions (version_id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`
+    );
+}
+
 async function cloneVersionedTable(connection, tableName, sourceVersionId, newVersionId, whereClause = 'version_id = ?') {
     const columns = await getTableColumns(connection, tableName);
     if (!columns.length) {
@@ -57,19 +79,24 @@ async function cloneVersionedTable(connection, tableName, sourceVersionId, newVe
     }
 
     const insertColumns = columns
-        .filter(col => !String(col.extra || '').toLowerCase().includes('auto_increment'))
-        .map(col => col.column_name);
+        .filter(col => {
+            const extra = String(col.extra_alias || '').toLowerCase();
+            const generationExpression = String(col.generation_expression_alias || '').trim();
+            return !extra.includes('auto_increment') && !generationExpression;
+        })
+        .map(col => col.column_name_alias);
 
     if (!insertColumns.includes('version_id')) {
         return 0;
     }
 
-    const selectColumns = insertColumns.map(column => (column === 'version_id' ? '? AS version_id' : column));
+    const quotedInsertColumns = insertColumns.map(column => `\`${column}\``);
+    const selectColumns = insertColumns.map(column => (column === 'version_id' ? '? AS version_id' : `\`${column}\``));
 
     const sql = `
-        INSERT INTO ${tableName} (${insertColumns.join(', ')})
+        INSERT INTO \`${tableName}\` (${quotedInsertColumns.join(', ')})
         SELECT ${selectColumns.join(', ')}
-        FROM ${tableName}
+        FROM \`${tableName}\`
         WHERE ${whereClause}
     `;
 
@@ -77,12 +104,114 @@ async function cloneVersionedTable(connection, tableName, sourceVersionId, newVe
     return result.affectedRows || 0;
 }
 
+async function cloneForecastVersionData(connection, sourceVersionId, newVersionId) {
+    const cloneCounts = {};
+
+    cloneCounts.forecast_data = await cloneVersionedTable(
+        connection,
+        'forecast_data',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.forecast_non_sales_headcount = await cloneVersionedTable(
+        connection,
+        'forecast_non_sales_headcount',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.production_settings = await cloneVersionedTable(
+        connection,
+        'production_settings',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.referral_settings = await cloneVersionedTable(
+        connection,
+        'referral_settings',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.kmpc_settings = await cloneVersionedTable(
+        connection,
+        'kmpc_settings',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.incentive_compensable_metrics = await cloneVersionedTable(
+        connection,
+        'incentive_compensable_metrics',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.incentive_quality_ratios = await cloneVersionedTable(
+        connection,
+        'incentive_quality_ratios',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.incentive_percent_targets = await cloneVersionedTable(
+        connection,
+        'incentive_percent_targets',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.incentive_expense_grids = await cloneVersionedTable(
+        connection,
+        'incentive_expense_grids',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.incentive_calculations = await cloneVersionedTable(
+        connection,
+        'incentive_calculations',
+        sourceVersionId,
+        newVersionId
+    );
+
+    cloneCounts.headcount_flows = await cloneVersionedTable(
+        connection,
+        'headcount_flows',
+        sourceVersionId,
+        newVersionId,
+        `version_id = ? AND data_type = 'forecast'`
+    );
+
+    return cloneCounts;
+}
+
 // Get all forecast versions
 router.get('/versions', async (req, res) => {
     try {
         const forecastPool = req.app.locals.forecastPool;
+        await ensureForecastScenariosTable(forecastPool);
         const [versions] = await forecastPool.query(
-            'SELECT * FROM forecast_versions WHERE is_active = TRUE ORDER BY version_id DESC'
+            `SELECT
+                fv.*,
+                CASE WHEN fs.version_id IS NULL THEN 0 ELSE 1 END AS is_scenario,
+                fs.source_version_id,
+                fs.scenario_name,
+                fs.created_at AS scenario_created_at,
+                fs.created_by AS scenario_created_by,
+                src.version_name AS source_version_name
+             FROM forecast_versions fv
+             LEFT JOIN forecast_scenarios fs
+               ON fs.version_id = fv.version_id
+              AND fs.is_active = TRUE
+             LEFT JOIN forecast_versions src
+               ON src.version_id = fs.source_version_id
+             WHERE fv.is_active = TRUE
+             ORDER BY
+               CASE WHEN fs.version_id IS NULL THEN 0 ELSE 1 END ASC,
+               fv.version_id DESC`
         );
         
         res.json({
@@ -101,9 +230,24 @@ router.get('/versions/:versionId', async (req, res) => {
     try {
         const { versionId } = req.params;
         const forecastPool = req.app.locals.forecastPool;
+        await ensureForecastScenariosTable(forecastPool);
         
         const [version] = await forecastPool.query(
-            'SELECT * FROM forecast_versions WHERE version_id = ?',
+            `SELECT
+                fv.*,
+                CASE WHEN fs.version_id IS NULL THEN 0 ELSE 1 END AS is_scenario,
+                fs.source_version_id,
+                fs.scenario_name,
+                fs.created_at AS scenario_created_at,
+                fs.created_by AS scenario_created_by,
+                src.version_name AS source_version_name
+             FROM forecast_versions fv
+             LEFT JOIN forecast_scenarios fs
+               ON fs.version_id = fv.version_id
+              AND fs.is_active = TRUE
+             LEFT JOIN forecast_versions src
+               ON src.version_id = fs.source_version_id
+             WHERE fv.version_id = ?`,
             [versionId]
         );
         
@@ -202,7 +346,7 @@ router.post('/cycle/save-lock-and-clone', async (req, res) => {
 
         await connection.query(
             `UPDATE forecast_versions
-             SET version_name = ?, is_locked = 1, updated_at = NOW(), created_by = COALESCE(created_by, ?)
+             SET version_name = ?, is_locked = 1, created_by = COALESCE(created_by, ?)
              WHERE version_id = ?`,
             [lockedVersionName, normalizedUser, numericSourceVersionId]
         );
@@ -230,78 +374,7 @@ router.post('/cycle/save-lock-and-clone', async (req, res) => {
         );
 
         const newVersionId = insertVersionResult.insertId;
-        const cloneCounts = {};
-
-        cloneCounts.forecast_data = await cloneVersionedTable(
-            connection,
-            'forecast_data',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.forecast_non_sales_headcount = await cloneVersionedTable(
-            connection,
-            'forecast_non_sales_headcount',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.production_settings = await cloneVersionedTable(
-            connection,
-            'production_settings',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.referral_settings = await cloneVersionedTable(
-            connection,
-            'referral_settings',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.incentive_compensable_metrics = await cloneVersionedTable(
-            connection,
-            'incentive_compensable_metrics',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.incentive_quality_ratios = await cloneVersionedTable(
-            connection,
-            'incentive_quality_ratios',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.incentive_percent_targets = await cloneVersionedTable(
-            connection,
-            'incentive_percent_targets',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.incentive_expense_grids = await cloneVersionedTable(
-            connection,
-            'incentive_expense_grids',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.incentive_calculations = await cloneVersionedTable(
-            connection,
-            'incentive_calculations',
-            numericSourceVersionId,
-            newVersionId
-        );
-
-        cloneCounts.headcount_flows = await cloneVersionedTable(
-            connection,
-            'headcount_flows',
-            numericSourceVersionId,
-            newVersionId,
-            `version_id = ? AND data_type = 'forecast'`
-        );
+        const cloneCounts = await cloneForecastVersionData(connection, numericSourceVersionId, newVersionId);
 
         await connection.commit();
 
@@ -319,6 +392,103 @@ router.post('/cycle/save-lock-and-clone', async (req, res) => {
         await connection.rollback();
         logger.error('Error while saving/locking/cloning forecast cycle:', error);
         res.status(500).json({ error: 'Failed to save, lock, and clone forecast cycle' });
+    } finally {
+        connection.release();
+    }
+});
+
+router.post('/scenarios', async (req, res) => {
+    const forecastPool = req.app.locals.forecastPool;
+    const connection = await forecastPool.getConnection();
+
+    try {
+        const {
+            sourceVersionId,
+            scenarioName,
+            userEmail
+        } = req.body || {};
+
+        const normalizedUser = normalizeEmail(userEmail) || null;
+        const numericSourceVersionId = Number(sourceVersionId);
+        const requestedScenarioName = String(scenarioName || '').trim();
+
+        if (!Number.isFinite(numericSourceVersionId) || numericSourceVersionId <= 0) {
+            return res.status(400).json({ error: 'sourceVersionId is required' });
+        }
+        if (!requestedScenarioName) {
+            return res.status(400).json({ error: 'scenarioName is required' });
+        }
+
+        await ensureForecastScenariosTable(connection);
+        await connection.beginTransaction();
+
+        const [sourceRows] = await connection.query(
+            `SELECT
+                fv.version_id,
+                fv.version_name,
+                fv.forecast_start_date,
+                fv.description,
+                fv.is_locked,
+                CASE WHEN fs.version_id IS NULL THEN 0 ELSE 1 END AS is_scenario
+             FROM forecast_versions fv
+             LEFT JOIN forecast_scenarios fs
+               ON fs.version_id = fv.version_id
+              AND fs.is_active = TRUE
+             WHERE fv.version_id = ?
+             FOR UPDATE`,
+            [numericSourceVersionId]
+        );
+
+        if (!sourceRows.length) {
+            await connection.rollback();
+            return res.status(404).json({ error: 'Source forecast version not found' });
+        }
+
+        const source = sourceRows[0];
+        if (source.is_scenario) {
+            await connection.rollback();
+            return res.status(409).json({ error: 'Scenarios can only be created from the live forecast' });
+        }
+
+        const uniqueScenarioName = await resolveUniqueVersionName(connection, requestedScenarioName);
+        const [insertVersionResult] = await connection.query(
+            `INSERT INTO forecast_versions
+             (version_name, forecast_start_date, description, is_active, is_locked, created_by)
+             VALUES (?, ?, ?, 1, 0, ?)`,
+            [
+                uniqueScenarioName,
+                source.forecast_start_date,
+                `Scenario sandbox cloned from ${source.version_name}`,
+                normalizedUser
+            ]
+        );
+
+        const newVersionId = insertVersionResult.insertId;
+        await connection.query(
+            `INSERT INTO forecast_scenarios
+             (version_id, source_version_id, scenario_name, created_by, is_active)
+             VALUES (?, ?, ?, ?, 1)`,
+            [newVersionId, numericSourceVersionId, uniqueScenarioName, normalizedUser]
+        );
+
+        const cloneCounts = await cloneForecastVersionData(connection, numericSourceVersionId, newVersionId);
+
+        await connection.commit();
+
+        res.status(201).json({
+            success: true,
+            data: {
+                sourceVersionId: numericSourceVersionId,
+                sourceVersionName: source.version_name,
+                newVersionId,
+                newVersionName: uniqueScenarioName,
+                cloneCounts
+            }
+        });
+    } catch (error) {
+        await connection.rollback();
+        logger.error('Error while creating forecast scenario:', error);
+        res.status(500).json({ error: 'Failed to create scenario sandbox' });
     } finally {
         connection.release();
     }
